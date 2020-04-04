@@ -2,7 +2,7 @@
 
 precision highp float;
 
-// uniform vec4 color;
+in vec3 color;
 // uniform sampler2D tex;
 // uniform int mode;
 // uniform float opacity;
@@ -12,5 +12,5 @@ precision highp float;
 out vec4 FragColor;
 
 void main() {
-    FragColor = vec4(0.3, 0.5, 0.7, 1.0);
+    FragColor = vec4(color, 1.0);
 }

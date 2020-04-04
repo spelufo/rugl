@@ -102,10 +102,10 @@ impl Attr {
 
     fn location(self) -> GLuint {
         match self {
-            Attr::Position => 1,
-            Attr::Color => 2,
-            Attr::TextureCoords => 3,
-            Attr::Normal => 4,
+            Attr::Position => 0,
+            Attr::Color => 1,
+            Attr::TextureCoords => 2,
+            Attr::Normal => 3,
         }
     }
 }
@@ -181,12 +181,12 @@ impl VertexArray {
         }
     }
 
-    pub fn draw(&self, n_indices: i32, offset: i32) {
+    pub fn draw(&self, n_indices: usize, offset: isize) {
         unsafe {
             gl::BindVertexArray(self.id);
             gl::DrawElements(
                 gl::TRIANGLES,
-                n_indices,
+                n_indices as i32,
                 gl::UNSIGNED_INT,
                 offset as *const GLvoid,
             );
