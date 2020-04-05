@@ -3,6 +3,7 @@ pub mod math;
 pub mod mesh;
 
 use glfw::{Action, Context, Key, WindowEvent};
+use math::*;
 use mesh::Mesh;
 
 fn main() {

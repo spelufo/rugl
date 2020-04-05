@@ -91,7 +91,7 @@ pub enum Attr {
 }
 
 impl Attr {
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Attr::Position => "a_position",
             Attr::Color => "a_color",
