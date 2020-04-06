@@ -1,13 +1,22 @@
+use crate::math::*;
 use gl::types::*;
-use std::ffi::CString;
+use std::ffi::{CString, CStr};
 use std::fs;
 use std::mem::{size_of, size_of_val};
 use std::ptr;
 
+pub fn setup() {
+    unsafe {
+        gl::Enable(gl::DEPTH_TEST);
+        gl::Enable(gl::CULL_FACE);
+        gl::CullFace(gl::FRONT);
+    }
+}
+
 pub fn clear(r: f32, g: f32, b: f32, a: f32) {
     unsafe {
         gl::ClearColor(r, g, b, a);
-        gl::Clear(gl::COLOR_BUFFER_BIT);
+        gl::Clear(gl::COLOR_BUFFER_BIT | gl::DEPTH_BUFFER_BIT);
     }
 }
 
@@ -54,7 +63,13 @@ impl Program {
         })
     }
 
-    // get attrib location
+    pub fn set_uniform(&self, name: &[u8], value: &Matrix4) {
+        unsafe {
+            let name = CStr::from_bytes_with_nul(name).unwrap();
+            let loc = gl::GetUniformLocation(self.id, name.as_ptr() as *const GLchar);
+            gl::UniformMatrix4fv(loc, 1, gl::FALSE, value.coords.as_ptr() as *const GLfloat)
+        }
+    }
 
     fn compile_shader(shader: GLuint, source: String) -> Result<(), String> {
         let src = CString::new(source).map_err(|e| e.to_string())?;
@@ -94,18 +109,18 @@ impl Attr {
     pub fn name(self) -> &'static str {
         match self {
             Attr::Position => "a_position",
-            Attr::Color => "a_color",
             Attr::TextureCoords => "a_texture_coords",
             Attr::Normal => "a_normal",
+            Attr::Color => "a_color",
         }
     }
 
     fn location(self) -> GLuint {
         match self {
             Attr::Position => 0,
-            Attr::Color => 1,
-            Attr::TextureCoords => 2,
-            Attr::Normal => 3,
+            Attr::TextureCoords => 1,
+            Attr::Normal => 2,
+            Attr::Color => 3,
         }
     }
 }
@@ -133,6 +148,14 @@ pub struct PointerConfig {
 }
 
 impl PointerConfig {
+    pub fn vector2() -> Self {
+        Self {
+            type_: Type::F32,
+            size: 2,
+            stride: 2 * size_of::<f32>() as isize,
+            offset: 0,
+        }
+    }
     pub fn vector3() -> Self {
         Self {
             type_: Type::F32,
