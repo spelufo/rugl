@@ -1,6 +1,6 @@
 use crate::math::*;
 use gl::types::*;
-use std::ffi::{CString, CStr};
+use std::ffi::{CStr, CString};
 use std::fs;
 use std::mem::{size_of, size_of_val};
 use std::ptr;
@@ -10,6 +10,7 @@ pub fn setup() {
         gl::Enable(gl::DEPTH_TEST);
         gl::Enable(gl::CULL_FACE);
         gl::CullFace(gl::FRONT);
+        gl::PolygonMode(gl::FRONT, gl::LINE);
     }
 }
 
@@ -67,7 +68,7 @@ impl Program {
         unsafe {
             let name = CStr::from_bytes_with_nul(name).unwrap();
             let loc = gl::GetUniformLocation(self.id, name.as_ptr() as *const GLchar);
-            gl::UniformMatrix4fv(loc, 1, gl::FALSE, value.coords.as_ptr() as *const GLfloat)
+            gl::UniformMatrix4fv(loc, 1, gl::FALSE, value.as_ptr() as *const GLfloat)
         }
     }
 

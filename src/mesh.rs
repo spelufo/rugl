@@ -11,7 +11,6 @@ pub struct Mesh {
     vertex_array: gpu::VertexArray,
 }
 
-
 impl Mesh {
     pub fn load_obj(source: &str) -> Mesh {
         let mut obj_positions = Vec::new();
@@ -32,15 +31,13 @@ impl Mesh {
                             _ => unreachable!(),
                         };
                         buf.push(vec3(x, y, z));
-                    },
+                    }
                     "vt" => {
                         let x = args.next().unwrap().parse::<f32>().unwrap();
                         let y = args.next().unwrap().parse::<f32>().unwrap();
                         obj_tex_coords.push(vec2(x, y));
-                    },
-                    _ => {
-                        continue
                     }
+                    _ => continue,
                 }
             }
         }
@@ -56,17 +53,14 @@ impl Mesh {
                 let mut vertex_count = 0;
                 for vertex_str in args {
                     vertex_count += 1;
-                    let v_idxs: Vec<Option<usize>> =
-                        vertex_str.split("/")
-                            .map(|s| s.parse::<usize>().ok())
-                            .collect();
+                    let v_idxs: Vec<Option<usize>> = vertex_str
+                        .split("/")
+                        .map(|s| s.parse::<usize>().ok())
+                        .collect();
                     assert!(v_idxs.len() == 3);
-                    positions.push(
-                        v_idxs[0].map_or(Vector3::zero(), |i| obj_positions[i - 1]));
-                    tex_coords.push(
-                        v_idxs[1].map_or(Vector2::zero(), |i| obj_tex_coords[i - 1]));
-                    normals.push(
-                        v_idxs[2].map_or(Vector3::zero(), |i| obj_normals[i - 1]));
+                    positions.push(v_idxs[0].map_or(Vector3::_0, |i| obj_positions[i - 1]));
+                    tex_coords.push(v_idxs[1].map_or(Vector2::_0, |i| obj_tex_coords[i - 1]));
+                    normals.push(v_idxs[2].map_or(Vector3::_0, |i| obj_normals[i - 1]));
                 }
                 let i0 = indices.len() as u32;
                 for i in 2..vertex_count {
@@ -77,7 +71,7 @@ impl Mesh {
             }
         }
 
-        let vertex_array = gpu::VertexArray::new(); 
+        let vertex_array = gpu::VertexArray::new();
         let mesh = Mesh {
             positions,
             tex_coords,
@@ -93,12 +87,28 @@ impl Mesh {
         let indices = vec![
             6, 3, 1, 6, 1, 4, // -x
             2, 7, 5, 2, 5, 0, // +x
-            3, 2, 0, 3, 0, 1, // -y
-            7, 6, 4, 7, 4, 5, // +y
-            0, 5, 4, 0, 4, 1, // -z
-            3, 6, 7, 3, 7, 2, // +z
+            11, 10, 8, 11, 8, 9, // -y
+            15, 14, 12, 15, 12, 13, // +y
+            16, 21, 20, 16, 20, 17, // -z
+            19, 22, 23, 19, 23, 18, // +z
         ];
         let positions = vec![
+            vec3(0.5, -0.5, -0.5),
+            vec3(-0.5, -0.5, -0.5),
+            vec3(0.5_, -0.5, 0.5),
+            vec3(-0.5, -0.5, 0.5),
+            vec3(-0.5, 0.5, -0.5),
+            vec3(0.5_, 0.5, -0.5),
+            vec3(-0.5, 0.5, 0.5),
+            vec3(0.5_, 0.5, 0.5),
+            vec3(0.5, -0.5, -0.5),
+            vec3(-0.5, -0.5, -0.5),
+            vec3(0.5, -0.5, 0.5),
+            vec3(-0.5, -0.5, 0.5),
+            vec3(-0.5, 0.5, -0.5),
+            vec3(0.5, 0.5, -0.5),
+            vec3(-0.5, 0.5, 0.5),
+            vec3(0.5, 0.5, 0.5),
             vec3(0.5, -0.5, -0.5),
             vec3(-0.5, -0.5, -0.5),
             vec3(0.5, -0.5, 0.5),
@@ -108,11 +118,36 @@ impl Mesh {
             vec3(-0.5, 0.5, 0.5),
             vec3(0.5, 0.5, 0.5),
         ];
-        let tex_coords = vec![vec2(0.0, 0.0); 8];
-        let normals = vec![vec3(0.0, 0.0, 0.0); 8];
+        let tex_coords = vec![vec2(0.0, 0.0); 24];
+        let normals = vec![
+            vec3(1., 0., 0.),
+            vec3(-1., 0., 0.),
+            vec3(1., 0., 0.),
+            vec3(-1., 0., 0.),
+            vec3(-1., 0., 0.),
+            vec3(1., 0., 0.),
+            vec3(-1., 0., 0.),
+            vec3(1., 0., 0.),
+            vec3(0., -1., 0.),
+            vec3(0., -1., 0.),
+            vec3(0., -1., 0.),
+            vec3(0., -1., 0.),
+            vec3(0., 1., 0.),
+            vec3(0., 1., 0.),
+            vec3(0., 1., 0.),
+            vec3(0., 1., 0.),
+            vec3(0., 0., -1.),
+            vec3(0., 0., -1.),
+            vec3(0., 0., 1.),
+            vec3(0., 0., 1.),
+            vec3(0., 0., -1.),
+            vec3(0., 0., -1.),
+            vec3(0., 0., 1.),
+            vec3(0., 0., 1.),
+        ];
 
-        let vertex_array = gpu::VertexArray::new(); 
-        let mesh = Mesh{
+        let vertex_array = gpu::VertexArray::new();
+        let mesh = Mesh {
             positions,
             tex_coords,
             normals,
@@ -130,8 +165,11 @@ impl Mesh {
         let nor_buf_id = gpu::gen_buffer();
         self.vertex_array
             .setup_attribute(Attr::Position, pos_buf_id, PointerConfig::vector3());
-        self.vertex_array
-            .setup_attribute(Attr::TextureCoords, tex_buf_id, PointerConfig::vector2());
+        self.vertex_array.setup_attribute(
+            Attr::TextureCoords,
+            tex_buf_id,
+            PointerConfig::vector2(),
+        );
         self.vertex_array
             .setup_attribute(Attr::Normal, nor_buf_id, PointerConfig::vector3());
 
