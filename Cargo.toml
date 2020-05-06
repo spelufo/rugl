@@ -6,5 +6,8 @@ edition = "2018"
 
 
 [dependencies]
-glfw = "0.37.0"
-gl = "0.14.0"
+glfw = "0.37"
+gl = "0.14"
+image = "0.23"
+freetype-rs = "0.24"
+notify = "5.0.0-pre.2"

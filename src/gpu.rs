@@ -1,6 +1,6 @@
 use crate::math::*;
 use gl::types::*;
-use std::ffi::{CStr, CString};
+use std::ffi::{CString};
 use std::fs;
 use std::mem::{size_of, size_of_val};
 use std::ptr;
@@ -11,6 +11,7 @@ pub fn setup() {
         gl::Enable(gl::CULL_FACE);
         gl::CullFace(gl::FRONT);
         gl::PolygonMode(gl::FRONT, gl::LINE);
+        gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
     }
 }
 
@@ -64,12 +65,16 @@ impl Program {
         })
     }
 
-    pub fn set_uniform(&self, name: &[u8], value: &Matrix4) {
+    pub fn get_uniform(&self, name: &str) -> Result<Uniform, String> {
         unsafe {
-            let name = CStr::from_bytes_with_nul(name).unwrap();
-            let loc = gl::GetUniformLocation(self.id, name.as_ptr() as *const GLchar);
-            gl::UniformMatrix4fv(loc, 1, gl::FALSE, value.as_ptr() as *const GLfloat)
+            let name = CString::new(name).map_err(|e| e.to_string())?;
+            let location = gl::GetUniformLocation(self.id, name.as_ptr() as *const GLchar);
+            Ok(Uniform { location })
         }
+    }
+
+    pub fn set_uniform<T: UniformValue>(&mut self, uniform: Uniform, value: T) {
+        value.set_uniform(uniform);
     }
 
     fn compile_shader(shader: GLuint, source: String) -> Result<(), String> {
@@ -97,6 +102,33 @@ impl Program {
         Ok(())
     }
 }
+
+#[derive(Copy, Clone)]
+#[repr(C)]
+pub struct Uniform {
+    pub location: i32,
+}
+
+pub trait UniformValue {
+    fn set_uniform(&self, uniform: Uniform);
+}
+
+impl UniformValue for &Matrix4 {
+    fn set_uniform(&self, uniform: Uniform) {
+        unsafe {
+            gl::UniformMatrix4fv(uniform.location, 1, gl::FALSE, self.as_ptr() as *const GLfloat);
+        }
+    }
+}
+
+impl UniformValue for TextureUnit {
+    fn set_uniform(&self, uniform: Uniform) {
+        unsafe {
+            gl::Uniform1i(uniform.location, self.0 as i32);
+        }
+    }
+}
+
 
 #[derive(Copy, Clone)]
 pub enum Attr {
@@ -245,4 +277,112 @@ fn load_buffer_data_impl<T>(kind: GLenum, buffer_id: u32, data: &[T]) {
             gl::STATIC_DRAW,
         );
     }
+}
+
+#[derive(Copy, Clone)]
+pub struct TextureUnit(pub u32);
+
+impl TextureUnit {
+    pub fn activate(self, texture: Texture) {
+        let TextureUnit(slot) = self;
+        assert!(slot < 16);
+        unsafe {
+            gl::ActiveTexture(gl::TEXTURE0 + slot as GLenum);
+            gl::BindTexture(gl::TEXTURE_2D, texture.id);
+        }
+    }
+}
+
+
+#[derive(Copy, Clone)]
+pub struct Texture {
+    id: u32,
+}
+
+impl Texture {
+    pub fn new() -> Texture {
+        let mut id: u32 = 0;
+        unsafe {
+            gl::GenTextures(1, &mut id as *mut GLuint);
+        }
+        // TODO: Check failure
+        let mut texture = Texture { id };
+        texture.set_min_filter_mode(TextureMinFilterMode::Linear);
+        texture.set_mag_filter_mode(TextureMagFilterMode::Nearest);
+        // texture.set_s_wrap_mode(TextureWrapMode::ClampToEdge);
+        // texture.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
+        texture
+    }
+
+    pub fn load_data<T>(&mut self, width: i32, height: i32, data: &[T]) {
+        // TODO: Other texture formats.
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                gl::RGB as i32,
+                width as GLsizei,
+                height as GLsizei,
+                0,
+                gl::RGB,
+                gl::UNSIGNED_BYTE,
+                data.as_ptr() as *const GLvoid
+            );
+        }
+    }
+
+    pub fn set_s_wrap_mode(&mut self, mode: TextureWrapMode) {
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_S, mode as i32);
+        }
+    }
+
+    pub fn set_t_wrap_mode(&mut self, mode: TextureWrapMode) {
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_WRAP_T, mode as i32);
+        }
+    }
+
+    pub fn set_min_filter_mode(&mut self, mode: TextureMinFilterMode) {
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MIN_FILTER, mode as i32);
+        }
+    }
+
+    pub fn set_mag_filter_mode(&mut self, mode: TextureMagFilterMode) {
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexParameteri(gl::TEXTURE_2D, gl::TEXTURE_MAG_FILTER, mode as i32);
+        }
+    }
+
+    // TODO: Mipmaps.
+    // pub fn make_mipmaps() {}
+}
+
+#[repr(u32)]
+pub enum TextureWrapMode {
+    Repeat = gl::REPEAT,
+    ClampToEdge = gl::CLAMP_TO_EDGE,
+    MirroredRepeat = gl::MIRRORED_REPEAT,
+}
+
+#[repr(u32)]
+pub enum TextureMinFilterMode {
+    Nearest = gl::NEAREST,
+    Linear = gl::LINEAR,
+    NearestMipmapNearest = gl::NEAREST_MIPMAP_NEAREST,
+    LinearMipmapNearest = gl::LINEAR_MIPMAP_NEAREST,
+    NearestMipmapLinear = gl::NEAREST_MIPMAP_LINEAR,
+    LinearMipmapLinear = gl::LINEAR_MIPMAP_LINEAR,
+}
+
+#[repr(u32)]
+pub enum TextureMagFilterMode {
+    Nearest = gl::NEAREST,
+    Linear = gl::LINEAR,
 }

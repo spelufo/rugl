@@ -83,6 +83,54 @@ impl Mesh {
         mesh
     }
 
+    pub fn new_quad(width: f32, height: f32) -> Self {
+        let indices = vec![
+            0, 1, 3, 3, 1, 2,
+            7, 5, 4, 7, 6, 5,
+        ];
+        let positions = vec![
+            vec3(0.0, -0.5*width,  0.5*height),
+            vec3(0.0,  0.5*width,  0.5*height),
+            vec3(0.0,  0.5*width, -0.5*height),
+            vec3(0.0, -0.5*width, -0.5*height),
+            vec3(0.0, -0.5*width,  0.5*height),
+            vec3(0.0,  0.5*width,  0.5*height),
+            vec3(0.0,  0.5*width, -0.5*height),
+            vec3(0.0, -0.5*width, -0.5*height),
+        ];
+        let tex_coords = vec![
+            vec2(0.0, 0.0),
+            vec2(1.0, 0.0),
+            vec2(1.0, 1.0),
+            vec2(0.0, 1.0),
+            vec2(0.0, 0.0),
+            vec2(1.0, 0.0),
+            vec2(1.0, 1.0),
+            vec2(0.0, 1.0),
+        ];
+        let normals = vec![
+            vec3(0., 0., 1.),
+            vec3(0., 0., 1.),
+            vec3(0., 0., 1.),
+            vec3(0., 0., 1.),
+            vec3(0., 0., -1.),
+            vec3(0., 0., -1.),
+            vec3(0., 0., -1.),
+            vec3(0., 0., -1.),
+        ];
+
+        let vertex_array = gpu::VertexArray::new();
+        let mesh = Mesh {
+            positions,
+            tex_coords,
+            normals,
+            indices,
+            vertex_array,
+        };
+        mesh.setup_attributes();
+        mesh
+    }
+
     pub fn new_cube() -> Self {
         let indices = vec![
             6, 3, 1, 6, 1, 4, // -x

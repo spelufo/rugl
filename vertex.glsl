@@ -1,7 +1,7 @@
 #version 300 es
 
 layout (location = 0) in vec3 a_position;
-layout (location = 1) in vec3 a_tex_coords;
+layout (location = 1) in vec2 a_tex_coords;
 layout (location = 2) in vec3 a_normal;
 
 uniform mat4 T_model;
@@ -9,7 +9,7 @@ uniform mat4 T_view;
 uniform mat4 T_projection;
 
 out vec3 position;
-out vec3 tex_coords;
+out vec2 tex_coords;
 out vec3 normal;
 
 void main() {
