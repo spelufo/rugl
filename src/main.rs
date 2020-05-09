@@ -1,11 +1,11 @@
-extern crate image;
-
 pub mod camera;
 pub mod camera_controller;
 // pub mod font;
 pub mod gpu;
 pub mod math;
 pub mod mesh;
+pub mod shader;
+pub mod text;
 
 use glfw::*;
 use std::fs;
@@ -16,51 +16,22 @@ use camera_controller::CameraController;
 // use font::Font;
 use math::*;
 use mesh::Mesh;
+use shader::MeshShader;
+
 
 fn main() {
-    let width = 800;
-    let height = 600;
+    let width = 1200;
+    let height = 900;
     let title = "rugl";
 
     // setup
     let mut glfw = glfw::init(glfw::FAIL_ON_ERRORS).unwrap();
-    glfw.window_hint(glfw::WindowHint::ClientApi(glfw::ClientApiHint::OpenGlEs));
-    glfw.window_hint(glfw::WindowHint::ContextVersion(3, 1));
+    setup_window_hints(&mut glfw);
     let (mut window, events) = glfw
         .create_window(width, height, title, glfw::WindowMode::Windowed)
         .expect("Failed to create GLFW window.");
-    window.make_current();
-    window.set_key_polling(true);
-    window.set_mouse_button_polling(true);
-    window.set_focus_polling(true);
-    window.set_cursor_enter_polling(true);
-    gl::load_with(|s| window.get_proc_address(s));
-    gpu::setup();
-
-    // camera
-    let mut camera = Camera {
-        position: 2. * Vector3::X,
-        orientation: Quaternion::rotation(vec3(1., 1., 1.), 2. * FRAC_PI_3),
-    };
-    let mut camera_ctl = CameraController::new();
-
-    // meshes
-    // let mesh_source = fs::read_to_string("resources/ico.obj").unwrap();
-    // let icosphere = Mesh::load_obj(&mesh_source);
-    // let cube = Mesh::new_cube();
-    let quad = Mesh::new_quad(1.0, 2.0);
-
-    // shader
-    let mut shader = gpu::Program::from_files("vertex.glsl", "fragment.glsl").unwrap();
-    let model_transform_uniform = shader.get_uniform("T_model").unwrap();
-    let view_transform_uniform = shader.get_uniform("T_view").unwrap();
-    let projection_transform_uniform = shader.get_uniform("T_projection").unwrap();
-    shader.set_uniform(model_transform_uniform, &Matrix4::id());
-    shader.set_uniform(view_transform_uniform, &camera.view_matrix());
-    shader.set_uniform(
-        projection_transform_uniform,
-        &Matrix4::perspective(FRAC_PI_3, width as f32 / height as f32, 0.5, 10.0),
-    );
+    setup_input(&mut window);
+    setup_gl(&mut window);
 
     // load image
     let img = image::open("resources/nav.png").unwrap().into_rgb();
@@ -68,33 +39,73 @@ fn main() {
     let img_height = img.height() as i32;
     let img_data = img.into_raw();
 
-    // let img_width = 2;
-    // let img_height = 4;
-    // let img_data: Vec<u8> = vec![
-    //     255, 0, 0,   255, 255, 0,     //0,0,
-    //     0, 255, 0,   255, 255, 0,     //0,0,
-    //     0, 0, 255,   255, 0, 255,     //0,0,
-    //     0, 255, 255,   255, 255, 255, //0,0,
-    //     // 0, 255, 0,  0, 255, 0,
-    //     // 0, 0, 255,  0, 0, 255,
-    // ];
+    // rasterize text image
+    let ft = text::init_library().unwrap();
+    let mut font = text::Font::open(&ft, "/usr/share/fonts/TTF/DejaVuSerif.ttf").unwrap();
+    let a_bitmap = font.char_bitmap('A').unwrap();
+    let text_width = a_bitmap.width() as i32;
+    let text_height = a_bitmap.rows() as i32;
+    let text_img_data = a_bitmap.buffer();
 
-    // setup texture
-    let mut texture = gpu::Texture::new();
-    texture.load_data(img_width, img_height, &img_data);
+    // camera
+    let mut camera = Camera {
+        position: 3. * Vector3::X + Vector3::Z,
+        orientation: Quaternion::rotation(vec3(1., 1., 1.), 2. * FRAC_PI_3),
+        aspect_ratio: width as f32 / height as f32,
+    };
+    let mut camera_ctl = CameraController::new();
 
+    // meshes
+    let mesh_source = fs::read_to_string("resources/ico.obj").unwrap();
+    let icosphere = Mesh::load_obj(&mesh_source);
+    let cube = Mesh::new_cube();
+    let quad = Mesh::new_quad(1.0, 2.0);
+    let text = Mesh::new_quad(0.005 * text_width as f32, 0.005 * text_height as f32);
+    
+    let icosphere_position = vec3(0.,0.,0.);
+    let mut cube_position = vec3(0.,1.,0.);
+    let quad_position = vec3(0.,0.,2.);
+    let text_position = vec3(1.,0.,1.);
+
+    // shaders
+    let mut mesh_shader = MeshShader::new("shaders/mesh_frag.glsl").unwrap();
+    let mut card_shader = MeshShader::new("shaders/card_frag.glsl").unwrap();
+    let mut text_shader = MeshShader::new("shaders/text_frag.glsl").unwrap();
+
+    // setup textures
     let texture_unit = gpu::TextureUnit(0);
-    texture_unit.activate(texture);
-    let texture_uniform = shader.get_uniform("texture0").unwrap();
-    shader.set_uniform(texture_uniform, texture_unit);
+    let mut quad_texture = gpu::Texture::new();
+    quad_texture.load_data(gpu::TextureFormat::Rgb, img_width, img_height, &img_data);
+    let mut text_texture = gpu::Texture::new();
+    text_texture.load_data(gpu::TextureFormat::Alpha, text_width, text_height, &text_img_data);
+
+    let quad_texture_uniform = card_shader.get_uniform("texture0").unwrap();
+    let text_texture_uniform = text_shader.get_uniform("texture0").unwrap();
+
+    // vars
+    let mut t: f32 = 0.0;
 
     while !window.should_close() {
         // draw
         gpu::clear(1.0, 1.0, 1.0, 1.0);
-        shader.activate();
-        // cube.draw();
-        // icosphere.draw();
-        quad.draw();
+        mesh_shader.set_view_matrix(&camera.view_projection_matrix());
+        card_shader.set_view_matrix(&camera.view_projection_matrix());
+        text_shader.set_view_matrix(&camera.view_projection_matrix());
+
+        mesh_shader.set_model_transform(&Matrix4::translate(icosphere_position));
+        mesh_shader.draw(&icosphere);
+
+        mesh_shader.set_model_transform(&Matrix4::translate(cube_position));
+        mesh_shader.draw(&cube);
+
+        card_shader.set_texture(quad_texture_uniform, texture_unit, quad_texture);
+        card_shader.set_model_transform(&Matrix4::translate(quad_position));
+        card_shader.draw(&quad);
+
+        text_shader.set_texture(text_texture_uniform, texture_unit, text_texture);
+        text_shader.set_model_transform(&Matrix4::translate(text_position));
+        text_shader.draw(&text);
+
         window.swap_buffers();
 
         // update
@@ -110,6 +121,29 @@ fn main() {
         }
 
         camera_ctl.update(&mut camera, &window);
-        shader.set_uniform(view_transform_uniform, &camera.view_matrix());
+        let w = 0.5;
+        let r = 1.5;
+        cube_position = vec3(0.0, r*(TAU * w * t).sin(), r*(TAU * w * t).cos());
+        t += 0.016;
     }
 }
+
+fn setup_window_hints(glfw: &mut glfw::Glfw) {
+    glfw.window_hint(glfw::WindowHint::ClientApi(glfw::ClientApiHint::OpenGlEs));
+    glfw.window_hint(glfw::WindowHint::ContextVersion(3, 1));
+}
+
+fn setup_gl(window: &mut glfw::Window) {
+    window.make_current();
+    gl::load_with(|s| window.get_proc_address(s));
+    gpu::setup();
+}
+
+fn setup_input(window: &mut glfw::Window) {
+    window.set_key_polling(true);
+    window.set_mouse_button_polling(true);
+    window.set_focus_polling(true);
+    window.set_cursor_enter_polling(true);
+}
+
+

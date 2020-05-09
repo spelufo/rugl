@@ -283,7 +283,7 @@ fn load_buffer_data_impl<T>(kind: GLenum, buffer_id: u32, data: &[T]) {
 pub struct TextureUnit(pub u32);
 
 impl TextureUnit {
-    pub fn activate(self, texture: Texture) {
+    pub fn bind_texture(self, texture: Texture) {
         let TextureUnit(slot) = self;
         assert!(slot < 16);
         unsafe {
@@ -314,18 +314,17 @@ impl Texture {
         texture
     }
 
-    pub fn load_data<T>(&mut self, width: i32, height: i32, data: &[T]) {
-        // TODO: Other texture formats.
+    pub fn load_data<T>(&mut self, format: TextureFormat, width: i32, height: i32, data: &[T]) {
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, self.id);
             gl::TexImage2D(
                 gl::TEXTURE_2D,
                 0,
-                gl::RGB as i32,
+                format as i32,
                 width as GLsizei,
                 height as GLsizei,
                 0,
-                gl::RGB,
+                format as u32,
                 gl::UNSIGNED_BYTE,
                 data.as_ptr() as *const GLvoid
             );
@@ -365,6 +364,15 @@ impl Texture {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone)]
+pub enum TextureFormat {
+    Alpha = gl::ALPHA,
+    Rgb = gl::RGB,
+    Rgba = gl::RGBA,
+}
+
+#[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum TextureWrapMode {
     Repeat = gl::REPEAT,
     ClampToEdge = gl::CLAMP_TO_EDGE,
@@ -372,6 +380,7 @@ pub enum TextureWrapMode {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum TextureMinFilterMode {
     Nearest = gl::NEAREST,
     Linear = gl::LINEAR,
@@ -382,6 +391,7 @@ pub enum TextureMinFilterMode {
 }
 
 #[repr(u32)]
+#[derive(Copy, Clone)]
 pub enum TextureMagFilterMode {
     Nearest = gl::NEAREST,
     Linear = gl::LINEAR,

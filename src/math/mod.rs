@@ -2,6 +2,8 @@ use std::ops::{Add, AddAssign, Div, DivAssign, Mul, MulAssign, Neg, Sub, SubAssi
 
 pub use std::f32::consts::*;
 
+pub const TAU: f32 = 2. * PI;
+
 include!("vector_space.rs");
 include!("color.rs");
 include!("vector.rs");
