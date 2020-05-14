@@ -6,11 +6,15 @@ vector_space!(Quaternion f32 {
 });
 
 impl Quaternion {
-    pub const _0: Quaternion = Quaternion { s: 0., x: 0., y: 0., z: 0. };
-    pub const _1: Quaternion = Quaternion { s: 1., x: 0., y: 0., z: 0. };
+    pub const ZERO: Quaternion = Quaternion { s: 0., x: 0., y: 0., z: 0. };
+    pub const ONE: Quaternion = Quaternion { s: 1., x: 0., y: 0., z: 0. };
     pub const X: Quaternion = Quaternion { s: 0., x: 1., y: 0., z: 0. };
     pub const Y: Quaternion = Quaternion { s: 0., x: 0., y: 1., z: 0. };
     pub const Z: Quaternion = Quaternion { s: 0., x: 0., y: 0., z: 1. };
+
+    pub fn normalized(self) -> Quaternion {
+        self / self.norm()
+    }
 
     pub fn rotation(axis: Vector3, angle: f32) -> Quaternion {
         let axis = axis.normalized();
@@ -29,7 +33,7 @@ impl Quaternion {
     }
 
     pub fn v(self) -> Vector3 {
-        vec3(self.x, self.y, self.z)
+        Vector3::new(self.x, self.y, self.z)
     }
 
     pub fn rotate(self, v: Vector3) -> Vector3 {

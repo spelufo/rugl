@@ -38,7 +38,7 @@ impl CameraController {
 
         // update camera.position
         let camera_speed = 0.1;
-        let mut camera_v_dir = Vector3::_0;
+        let mut camera_v_dir = Vector3::ZERO;
         if window.get_key(Key::W) == glfw::Action::Press {
             camera_v_dir += dir_forward;
         }
@@ -62,7 +62,7 @@ impl CameraController {
 
         // update camera.orientation
         let (x, y) = window.get_cursor_pos();
-        let cursor_pos = vec2(x as f32, y as f32);
+        let cursor_pos = Vector2::new(x as f32, y as f32);
         if let Some(last_cursor_pos) = self.last_cursor_pos {
             let cursor_off = cursor_pos - last_cursor_pos;
             camera.rotate(dir_right, -0.005 * cursor_off.y);

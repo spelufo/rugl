@@ -1,10 +1,9 @@
 pub mod camera;
 pub mod camera_controller;
-// pub mod font;
 pub mod gpu;
+pub mod image;
 pub mod math;
 pub mod mesh;
-pub mod shader;
 pub mod text;
 
 use glfw::*;
@@ -13,11 +12,9 @@ use std::fs;
 
 use camera::Camera;
 use camera_controller::CameraController;
-// use font::Font;
 use math::*;
-use mesh::Mesh;
-use shader::MeshShader;
-
+use mesh::{Mesh, MeshShader};
+use text::{Text, TextShader};
 
 fn main() {
     let width = 1200;
@@ -33,54 +30,49 @@ fn main() {
     setup_input(&mut window);
     setup_gl(&mut window);
 
+    
+    // camera
+    let mut camera = Camera {
+        position: 3. * Vector3::X + Vector3::Z,
+        orientation: Quaternion::rotation(Vector3::new(1., 1., 1.), 2. * FRAC_PI_3),
+        aspect_ratio: width as f32 / height as f32,
+    };
+    let mut camera_ctl = CameraController::new();
+
+    // text
+    let ft = text::init_library().unwrap();
+    let mut font = text::Font::open(&ft, "/usr/share/fonts/TTF/DejaVuSerif.ttf", 64).unwrap();
+    let font_atlas = font.make_atlas().unwrap();
+    let text = Text::new("Hello, world!", &font_atlas);
+
     // load image
     let img = image::open("resources/nav.png").unwrap().into_rgb();
     let img_width = img.width() as i32;
     let img_height = img.height() as i32;
     let img_data = img.into_raw();
 
-    // rasterize text image
-    let ft = text::init_library().unwrap();
-    let mut font = text::Font::open(&ft, "/usr/share/fonts/TTF/DejaVuSerif.ttf").unwrap();
-    let a_bitmap = font.char_bitmap('A').unwrap();
-    let text_width = a_bitmap.width() as i32;
-    let text_height = a_bitmap.rows() as i32;
-    let text_img_data = a_bitmap.buffer();
-
-    // camera
-    let mut camera = Camera {
-        position: 3. * Vector3::X + Vector3::Z,
-        orientation: Quaternion::rotation(vec3(1., 1., 1.), 2. * FRAC_PI_3),
-        aspect_ratio: width as f32 / height as f32,
-    };
-    let mut camera_ctl = CameraController::new();
-
     // meshes
     let mesh_source = fs::read_to_string("resources/ico.obj").unwrap();
     let icosphere = Mesh::load_obj(&mesh_source);
     let cube = Mesh::new_cube();
     let quad = Mesh::new_quad(1.0, 2.0);
-    let text = Mesh::new_quad(0.005 * text_width as f32, 0.005 * text_height as f32);
     
-    let icosphere_position = vec3(0.,0.,0.);
-    let mut cube_position = vec3(0.,1.,0.);
-    let quad_position = vec3(0.,0.,2.);
-    let text_position = vec3(1.,0.,1.);
+    let icosphere_position = Vector3::new(0.,0.,0.);
+    let mut cube_position = Vector3::new(0.,1.,0.);
+    let quad_position = Vector3::new(0.,0.,2.);
 
     // shaders
     let mut mesh_shader = MeshShader::new("shaders/mesh_frag.glsl").unwrap();
     let mut card_shader = MeshShader::new("shaders/card_frag.glsl").unwrap();
-    let mut text_shader = MeshShader::new("shaders/text_frag.glsl").unwrap();
+    let mut text_shader = TextShader::new().unwrap();
+    text_shader.set_screen_size(Vector2::new(width as f32, height as f32));
 
     // setup textures
     let texture_unit = gpu::TextureUnit(0);
     let mut quad_texture = gpu::Texture::new();
     quad_texture.load_data(gpu::TextureFormat::Rgb, img_width, img_height, &img_data);
-    let mut text_texture = gpu::Texture::new();
-    text_texture.load_data(gpu::TextureFormat::Alpha, text_width, text_height, &text_img_data);
 
     let quad_texture_uniform = card_shader.get_uniform("texture0").unwrap();
-    let text_texture_uniform = text_shader.get_uniform("texture0").unwrap();
 
     // vars
     let mut t: f32 = 0.0;
@@ -90,7 +82,6 @@ fn main() {
         gpu::clear(1.0, 1.0, 1.0, 1.0);
         mesh_shader.set_view_matrix(&camera.view_projection_matrix());
         card_shader.set_view_matrix(&camera.view_projection_matrix());
-        text_shader.set_view_matrix(&camera.view_projection_matrix());
 
         mesh_shader.set_model_transform(&Matrix4::translate(icosphere_position));
         mesh_shader.draw(&icosphere);
@@ -102,8 +93,6 @@ fn main() {
         card_shader.set_model_transform(&Matrix4::translate(quad_position));
         card_shader.draw(&quad);
 
-        text_shader.set_texture(text_texture_uniform, texture_unit, text_texture);
-        text_shader.set_model_transform(&Matrix4::translate(text_position));
         text_shader.draw(&text);
 
         window.swap_buffers();
@@ -121,9 +110,9 @@ fn main() {
         }
 
         camera_ctl.update(&mut camera, &window);
-        let w = 0.5;
-        let r = 1.5;
-        cube_position = vec3(0.0, r*(TAU * w * t).sin(), r*(TAU * w * t).cos());
+        let w = 0.25;
+        let r = 3.0;
+        cube_position = Vector3::new(0.0, r*(TAU * w * t).sin(), r*(TAU * w * t).cos());
         t += 0.016;
     }
 }

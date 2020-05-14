@@ -9,3 +9,4 @@ include!("color.rs");
 include!("vector.rs");
 include!("matrix.rs");
 include!("quaternion.rs");
+include!("rectangle.rs");

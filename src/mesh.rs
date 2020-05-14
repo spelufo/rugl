@@ -30,12 +30,12 @@ impl Mesh {
                             "vn" => &mut obj_normals,
                             _ => unreachable!(),
                         };
-                        buf.push(vec3(x, y, z));
+                        buf.push(Vector3::new(x, y, z));
                     }
                     "vt" => {
                         let x = args.next().unwrap().parse::<f32>().unwrap();
                         let y = args.next().unwrap().parse::<f32>().unwrap();
-                        obj_tex_coords.push(vec2(x, y));
+                        obj_tex_coords.push(Vector2::new(x, y));
                     }
                     _ => continue,
                 }
@@ -58,9 +58,9 @@ impl Mesh {
                         .map(|s| s.parse::<usize>().ok())
                         .collect();
                     assert!(v_idxs.len() == 3);
-                    positions.push(v_idxs[0].map_or(Vector3::_0, |i| obj_positions[i - 1]));
-                    tex_coords.push(v_idxs[1].map_or(Vector2::_0, |i| obj_tex_coords[i - 1]));
-                    normals.push(v_idxs[2].map_or(Vector3::_0, |i| obj_normals[i - 1]));
+                    positions.push(v_idxs[0].map_or(Vector3::ZERO, |i| obj_positions[i - 1]));
+                    tex_coords.push(v_idxs[1].map_or(Vector2::ZERO, |i| obj_tex_coords[i - 1]));
+                    normals.push(v_idxs[2].map_or(Vector3::ZERO, |i| obj_normals[i - 1]));
                 }
                 let i0 = indices.len() as u32;
                 for i in 2..vertex_count {
@@ -89,34 +89,34 @@ impl Mesh {
             7, 5, 4, 7, 6, 5,
         ];
         let positions = vec![
-            vec3(0.0, -0.5*width,  0.5*height),
-            vec3(0.0,  0.5*width,  0.5*height),
-            vec3(0.0,  0.5*width, -0.5*height),
-            vec3(0.0, -0.5*width, -0.5*height),
-            vec3(0.0, -0.5*width,  0.5*height),
-            vec3(0.0,  0.5*width,  0.5*height),
-            vec3(0.0,  0.5*width, -0.5*height),
-            vec3(0.0, -0.5*width, -0.5*height),
+            Vector3::new(0.0, -0.5*width,  0.5*height),
+            Vector3::new(0.0,  0.5*width,  0.5*height),
+            Vector3::new(0.0,  0.5*width, -0.5*height),
+            Vector3::new(0.0, -0.5*width, -0.5*height),
+            Vector3::new(0.0, -0.5*width,  0.5*height),
+            Vector3::new(0.0,  0.5*width,  0.5*height),
+            Vector3::new(0.0,  0.5*width, -0.5*height),
+            Vector3::new(0.0, -0.5*width, -0.5*height),
         ];
         let tex_coords = vec![
-            vec2(0.0, 0.0),
-            vec2(1.0, 0.0),
-            vec2(1.0, 1.0),
-            vec2(0.0, 1.0),
-            vec2(0.0, 0.0),
-            vec2(1.0, 0.0),
-            vec2(1.0, 1.0),
-            vec2(0.0, 1.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(1.0, 1.0),
+            Vector2::new(0.0, 1.0),
+            Vector2::new(0.0, 0.0),
+            Vector2::new(1.0, 0.0),
+            Vector2::new(1.0, 1.0),
+            Vector2::new(0.0, 1.0),
         ];
         let normals = vec![
-            vec3(0., 0., 1.),
-            vec3(0., 0., 1.),
-            vec3(0., 0., 1.),
-            vec3(0., 0., 1.),
-            vec3(0., 0., -1.),
-            vec3(0., 0., -1.),
-            vec3(0., 0., -1.),
-            vec3(0., 0., -1.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(0., 0., -1.),
+            Vector3::new(0., 0., -1.),
+            Vector3::new(0., 0., -1.),
+            Vector3::new(0., 0., -1.),
         ];
 
         let vertex_array = gpu::VertexArray::new();
@@ -141,57 +141,57 @@ impl Mesh {
             19, 22, 23, 19, 23, 18, // +z
         ];
         let positions = vec![
-            vec3(0.5, -0.5, -0.5),
-            vec3(-0.5, -0.5, -0.5),
-            vec3(0.5_, -0.5, 0.5),
-            vec3(-0.5, -0.5, 0.5),
-            vec3(-0.5, 0.5, -0.5),
-            vec3(0.5_, 0.5, -0.5),
-            vec3(-0.5, 0.5, 0.5),
-            vec3(0.5_, 0.5, 0.5),
-            vec3(0.5, -0.5, -0.5),
-            vec3(-0.5, -0.5, -0.5),
-            vec3(0.5, -0.5, 0.5),
-            vec3(-0.5, -0.5, 0.5),
-            vec3(-0.5, 0.5, -0.5),
-            vec3(0.5, 0.5, -0.5),
-            vec3(-0.5, 0.5, 0.5),
-            vec3(0.5, 0.5, 0.5),
-            vec3(0.5, -0.5, -0.5),
-            vec3(-0.5, -0.5, -0.5),
-            vec3(0.5, -0.5, 0.5),
-            vec3(-0.5, -0.5, 0.5),
-            vec3(-0.5, 0.5, -0.5),
-            vec3(0.5, 0.5, -0.5),
-            vec3(-0.5, 0.5, 0.5),
-            vec3(0.5, 0.5, 0.5),
+            Vector3::new(0.5, -0.5, -0.5),
+            Vector3::new(-0.5, -0.5, -0.5),
+            Vector3::new(0.5_, -0.5, 0.5),
+            Vector3::new(-0.5, -0.5, 0.5),
+            Vector3::new(-0.5, 0.5, -0.5),
+            Vector3::new(0.5_, 0.5, -0.5),
+            Vector3::new(-0.5, 0.5, 0.5),
+            Vector3::new(0.5_, 0.5, 0.5),
+            Vector3::new(0.5, -0.5, -0.5),
+            Vector3::new(-0.5, -0.5, -0.5),
+            Vector3::new(0.5, -0.5, 0.5),
+            Vector3::new(-0.5, -0.5, 0.5),
+            Vector3::new(-0.5, 0.5, -0.5),
+            Vector3::new(0.5, 0.5, -0.5),
+            Vector3::new(-0.5, 0.5, 0.5),
+            Vector3::new(0.5, 0.5, 0.5),
+            Vector3::new(0.5, -0.5, -0.5),
+            Vector3::new(-0.5, -0.5, -0.5),
+            Vector3::new(0.5, -0.5, 0.5),
+            Vector3::new(-0.5, -0.5, 0.5),
+            Vector3::new(-0.5, 0.5, -0.5),
+            Vector3::new(0.5, 0.5, -0.5),
+            Vector3::new(-0.5, 0.5, 0.5),
+            Vector3::new(0.5, 0.5, 0.5),
         ];
-        let tex_coords = vec![vec2(0.0, 0.0); 24];
+        let tex_coords = vec![Vector2::new(0.0, 0.0); 24];
         let normals = vec![
-            vec3(1., 0., 0.),
-            vec3(-1., 0., 0.),
-            vec3(1., 0., 0.),
-            vec3(-1., 0., 0.),
-            vec3(-1., 0., 0.),
-            vec3(1., 0., 0.),
-            vec3(-1., 0., 0.),
-            vec3(1., 0., 0.),
-            vec3(0., -1., 0.),
-            vec3(0., -1., 0.),
-            vec3(0., -1., 0.),
-            vec3(0., -1., 0.),
-            vec3(0., 1., 0.),
-            vec3(0., 1., 0.),
-            vec3(0., 1., 0.),
-            vec3(0., 1., 0.),
-            vec3(0., 0., -1.),
-            vec3(0., 0., -1.),
-            vec3(0., 0., 1.),
-            vec3(0., 0., 1.),
-            vec3(0., 0., -1.),
-            vec3(0., 0., -1.),
-            vec3(0., 0., 1.),
-            vec3(0., 0., 1.),
+            Vector3::new(1., 0., 0.),
+            Vector3::new(-1., 0., 0.),
+            Vector3::new(1., 0., 0.),
+            Vector3::new(-1., 0., 0.),
+            Vector3::new(-1., 0., 0.),
+            Vector3::new(1., 0., 0.),
+            Vector3::new(-1., 0., 0.),
+            Vector3::new(1., 0., 0.),
+            Vector3::new(0., -1., 0.),
+            Vector3::new(0., -1., 0.),
+            Vector3::new(0., -1., 0.),
+            Vector3::new(0., -1., 0.),
+            Vector3::new(0., 1., 0.),
+            Vector3::new(0., 1., 0.),
+            Vector3::new(0., 1., 0.),
+            Vector3::new(0., 1., 0.),
+            Vector3::new(0., 0., -1.),
+            Vector3::new(0., 0., -1.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(0., 0., -1.),
+            Vector3::new(0., 0., -1.),
+            Vector3::new(0., 0., 1.),
+            Vector3::new(0., 0., 1.),
         ];
 
         let vertex_array = gpu::VertexArray::new();
@@ -230,5 +230,55 @@ impl Mesh {
 
     pub fn draw(&self) {
         self.vertex_array.draw(self.indices.len(), 0);
+    }
+}
+
+
+pub struct MeshShader {
+    program: gpu::Program,
+    view_projection_uniform: gpu::Uniform,
+    model_transform_uniform: gpu::Uniform,
+}
+
+
+impl MeshShader {
+    pub fn new(fragment_shader_path: &str) -> Result<Self, String> {
+        let program = gpu::Program::from_files("shaders/mesh_vert.glsl", fragment_shader_path)?;
+        let view_projection_uniform = program.get_uniform("T_view_projection")?;
+        let model_transform_uniform = program.get_uniform("T_model")?;
+        Ok(MeshShader {
+            program,
+            view_projection_uniform,
+            model_transform_uniform,
+        })
+    }
+
+    pub fn get_uniform(&self, name: &str) -> Result<gpu::Uniform, String> {
+        self.program.get_uniform(name)
+    }
+
+    pub fn set_uniform<T: gpu::UniformValue>(&mut self, uniform: gpu::Uniform, value: T) {
+        self.program.activate();
+        value.set_uniform(uniform);
+    }
+
+    pub fn set_texture(&mut self, uniform: gpu::Uniform, texture_unit: gpu::TextureUnit, texture: gpu::Texture) {
+        texture_unit.bind_texture(texture);
+        self.set_uniform(uniform, texture_unit);
+    }
+
+    pub fn set_view_matrix(&mut self, view_projection_transform: &Matrix4) {
+        self.program.activate();
+        self.program.set_uniform(self.view_projection_uniform, view_projection_transform);
+    }
+
+    pub fn set_model_transform(&mut self, model_transform: &Matrix4) {
+        self.program.activate();
+        self.program.set_uniform(self.model_transform_uniform, model_transform);
+    }
+
+    pub fn draw(&mut self, mesh: &Mesh) {
+        self.program.activate();
+        mesh.draw();
     }
 }

@@ -12,6 +12,8 @@ pub fn setup() {
         gl::CullFace(gl::FRONT);
         gl::PolygonMode(gl::FRONT, gl::LINE);
         gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
+        gl::Enable(gl::BLEND);
+        gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
     }
 }
 
@@ -111,6 +113,30 @@ pub struct Uniform {
 
 pub trait UniformValue {
     fn set_uniform(&self, uniform: Uniform);
+}
+
+impl UniformValue for f32 {
+    fn set_uniform(&self, uniform: Uniform) {
+        unsafe {
+            gl::Uniform1f(uniform.location, *self);
+        }
+    }
+}
+
+impl UniformValue for Vector2 {
+    fn set_uniform(&self, uniform: Uniform) {
+        unsafe {
+            gl::Uniform2f(uniform.location, self.x, self.y);
+        }
+    }
+}
+
+impl UniformValue for Vector3 {
+    fn set_uniform(&self, uniform: Uniform) {
+        unsafe {
+            gl::Uniform3f(uniform.location, self.x, self.y, self.z);
+        }
+    }
 }
 
 impl UniformValue for &Matrix4 {
@@ -294,7 +320,7 @@ impl TextureUnit {
 }
 
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 pub struct Texture {
     id: u32,
 }

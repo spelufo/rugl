@@ -1,53 +1,241 @@
-use freetype::error::Error as FtError;
+use crate::gpu;
+use crate::gpu::{Attr, PointerConfig};
+use crate::math::*;
 
 
-pub fn init_library() -> Result<freetype::Library, FtError> {
+pub fn init_library() -> Result<freetype::Library, freetype::Error> {
     freetype::Library::init()
 }
 
 pub struct Font<'a> {
+    _ft: &'a freetype::Library,
     face: freetype::Face,
-    // ft: &'a freetype::Library,
-    _bounded_by_ft_library: std::marker::PhantomData<&'a freetype::Library>,
 }
 
 impl<'a> Font<'a> {
-    pub fn open(ft: &'a freetype::Library, path: &str) -> Result<Font<'a>, FtError> {
+    pub fn open(ft: &'a freetype::Library, path: &str, font_size_px: u32) -> Result<Font<'a>, freetype::Error> {
         let face = ft.new_face(path, 0)?;
-        face.set_char_size(40 * 60, 0, 50, 0)?;
-        dbg!(&face);
+        face.set_pixel_sizes(0, font_size_px)?;
         Ok(Font {
+            _ft: ft,
             face,
-            _bounded_by_ft_library: std::marker::PhantomData,
         })
     }
 
-    pub fn char_bitmap(&mut self, char: char) -> Result<freetype::Bitmap, FtError> {
-        self.face.load_char(char as usize, freetype::face::LoadFlag::RENDER)?;
-        let glyph = self.face.glyph();
+    pub fn make_atlas(&mut self) -> Result<Atlas, freetype::Error> {
+        Atlas::new(self)
+    }
+
+    pub fn load_char(&mut self, c: char, load_flags: freetype::face::LoadFlag) -> Result<freetype::GlyphSlot, freetype::Error> {
+        self.face.load_char(c as usize, load_flags)?;
+        Ok(*self.face.glyph())
+    }
+
+    pub fn char_bitmap(&mut self, c: char) -> Result<freetype::Bitmap, freetype::Error> {
+        let glyph = self.load_char(c, freetype::face::LoadFlag::RENDER)?;
         Ok(glyph.bitmap())
     }
 }
 
-// {
-//     let ft = freetype::Library::init()?;
-//     let face = ft.new_face(font_path, 0)?;
-//     face.set_char_size(40 * 64, 0, 50, 0)?;
-//     face.load_char('A' as usize, freetype::face::RENDER)?;
-//     let glyph = face.glyph();
-//     dbg!(glyph.bitmap());    
-// }
+pub struct Atlas {
+    image: image::GrayImage,
+    tex_coords: [RectangleI; 128],
+    metrics: [freetype::GlyphMetrics; 128],
+}
+
+impl Atlas {
+    pub fn new(font: &mut Font) -> Result<Atlas, freetype::Error> {
+        let mut width = 0;
+        let mut height = 0;
+        let mut tex_coords = [RectangleI::ZERO; 128];
+        let mut metrics: [freetype::GlyphMetrics; 128] = unsafe { std::mem::zeroed() };
+
+        let printable_ascii: std::ops::Range<u8> = 0x20..0x7e;
+        for c in printable_ascii.clone() {
+            if let Ok(glyph) = font.load_char(c as char, freetype::face::LoadFlag::DEFAULT) {
+                let glpyh_metrics = glyph.metrics();
+                metrics[c as usize] = glpyh_metrics;
+                let w = glpyh_metrics.width as i32 >> 6;
+                let h = glpyh_metrics.height as i32 >> 6;
+                tex_coords[c as usize] = RectangleI::new(Vector2I::new(width, 0), w, h);
+                width += w;
+                height = height.max(h);
+            } else {
+                println!("Atlas::new: unable to load glyph for char {:?}", c)
+            }
+        }
+
+        let mut image = match image::DynamicImage::new_luma8(width as u32, height as u32) {
+            image::DynamicImage::ImageLuma8(image) => image,
+            _ => unreachable!(),
+        };
+
+        for c in printable_ascii {
+            if let Ok(glyph) = font.load_char(c as char, freetype::face::LoadFlag::RENDER) {
+                let bounds = tex_coords[c as usize];
+                let bitmap = glyph.bitmap();
+                assert!(bitmap.rows() <= bounds.height() && bitmap.width() <= bounds.width());
+                let bitmap_pitch = bitmap.pitch() as usize;
+                let bitmap_buffer = bitmap.buffer();
+                for y in bounds.min.y .. bounds.max.y {
+                    for x in bounds.min.x .. bounds.max.x {
+                        let yr = (y - bounds.min.y) as usize;
+                        let xr = (x - bounds.min.x) as usize;
+                        let i: usize = bitmap_pitch * yr + xr;
+                            image.put_pixel(x as u32, y as u32, image::Luma([bitmap_buffer[i]]));
+                    }
+                }
+            }
+        }
+
+        Ok(Atlas { image, tex_coords, metrics })
+    }
+
+    pub fn width(&self) -> i32 {
+        self.image.width() as i32
+    }
+
+    pub fn height(&self) -> i32 {
+        self.image.height() as i32
+    }
+
+    pub fn image_data(&self) -> &[u8] {
+        &self.image  // TODO: Check. Does this yield a slice of the image data? It seems to work.
+    }
+
+    pub fn tex_coords(&self, c: char) -> Option<Rectangle> {
+        let i = c as usize;
+        if i >= 128 || self.tex_coords[i] == RectangleI::ZERO {
+            None
+        } else {
+            let width = self.width() as f32;
+            let height = self.height() as f32;
+            let r = self.tex_coords[i];
+            Some(Rectangle {
+                min: Vector2::new(r.min.x as f32 / width, r.max.y as f32 / height),
+                max: Vector2::new(r.max.x as f32 / width, r.min.y as f32 / height),
+            })
+        }
+    }
+
+    pub fn metrics(&self, c: char) -> freetype::GlyphMetrics {
+        self.metrics[c as usize]
+    }
+}
 
 
-// {
-//     let font = Font::open("/usr/share/fonts/TTF/DejaVuSerif.ttf");
-//     let atlas = FontAtlas::new(font, font_size);
-//     let texture = gpu::load_texture(&atlas.bitmap());
-//     let quads = ...
-//     for c in str {
-//         let uvs = atlas.uv_bounds_for_char('A')
-//         quads.append(Vertex { pos, uvs })
-//     }
-//     gpu::render()
-// }
+#[derive(Debug)]
+pub struct Text {
+    positions: Vec<Vector2>,
+    tex_coords: Vec<Vector2>,
+    indices: Vec<u32>,
+    texture: gpu::Texture,
+    vertex_array: gpu::VertexArray,
+}
 
+impl Text {
+    pub fn new(s: &str, atlas: &Atlas) -> Text {
+
+        let mut texture = gpu::Texture::new();
+        texture.load_data(gpu::TextureFormat::Alpha, atlas.width(), atlas.height(), atlas.image_data());
+
+        let mut positions: Vec<Vector2> = Vec::new();
+        let mut tex_coords: Vec<Vector2> = Vec::new();
+        let mut indices: Vec<u32> = Vec::new();
+        let mut pen = Vector2::ZERO;        
+
+        let mut i = 0;
+        for c in s.chars() {
+            if let Some(uvs) = atlas.tex_coords(c) {
+                indices.extend_from_slice(&[i, i+3, i+1, i+3, i+2, i+1]);
+                let metrics = atlas.metrics(c);
+                let w = (metrics.width >> 6) as f32;
+                let h = (metrics.height >> 6) as f32;
+                positions.push(pen);
+                positions.push(pen + Vector2::new(w, 0.));
+                positions.push(pen + Vector2::new(w, h));
+                positions.push(pen + Vector2::new(0., h));
+                    tex_coords.push(uvs.min);
+                    tex_coords.push(Vector2::new(uvs.max.x, uvs.min.y));
+                    tex_coords.push(uvs.max);
+                    tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
+                pen.x += w + 1.;
+                i += 4;
+            } else {
+                if c == ' ' {
+                    pen.x += 20.0;
+                }
+            }
+        }
+        let vertex_array = gpu::VertexArray::new();
+        let text = Text {
+            positions,
+            tex_coords,
+            indices,
+            texture,
+            vertex_array,
+        };
+        text.setup_attributes();
+        text
+    }
+
+    pub fn setup_attributes(&self) {
+        // configure attributes
+        let pos_buf_id = gpu::gen_buffer();
+        let tex_buf_id = gpu::gen_buffer();
+        self.vertex_array.setup_attribute(Attr::Position, pos_buf_id, PointerConfig::vector2());
+        self.vertex_array.setup_attribute(Attr::TextureCoords, tex_buf_id, PointerConfig::vector2());
+
+        // load buffers data
+        gpu::load_index_buffer_data(self.vertex_array.index_buffer_id, &self.indices[..]);
+        gpu::load_buffer_data(pos_buf_id, &self.positions[..]);
+        gpu::load_buffer_data(tex_buf_id, &self.tex_coords[..]);
+    }
+
+    pub fn texture(&self) -> gpu::Texture {
+        self.texture
+    }
+
+    pub fn draw(&self) {
+        self.vertex_array.draw(self.indices.len(), 0);
+    }
+}
+
+
+
+pub struct TextShader {
+    program: gpu::Program,
+    texture_uniform: gpu::Uniform,
+    screen_size_uniform: gpu::Uniform,
+}
+
+impl TextShader {
+    pub fn new() -> Result<Self, String> {
+        let program = gpu::Program::from_files("shaders/text_vert.glsl", "shaders/text_frag.glsl")?;
+        let texture_uniform = program.get_uniform("texture0")?;
+        let screen_size_uniform = program.get_uniform("screen_size")?;
+        Ok(TextShader {
+            program,
+            texture_uniform,
+            screen_size_uniform,
+        })
+    }
+
+    pub fn set_texture(&mut self, texture: gpu::Texture) {
+        self.program.activate();
+        let texture_unit = gpu::TextureUnit(0);
+        texture_unit.bind_texture(texture);
+        self.program.set_uniform(self.texture_uniform, texture_unit);
+    }
+
+    pub fn set_screen_size(&mut self, screen_size: Vector2) {
+        self.program.activate();
+        self.program.set_uniform(self.screen_size_uniform, screen_size);
+    }
+
+    pub fn draw(&mut self, text: &Text) {
+        self.set_texture(text.texture());
+        self.program.activate();
+        text.draw();
+    }
+}

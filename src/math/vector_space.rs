@@ -17,7 +17,7 @@ macro_rules! vector_space {
 
         impl $v {
             pub fn dot(v: Self, w: Self) -> f32 {
-                sum!($(v.$c * w.$c),+)
+                sum!($(v.$c as f32 * w.$c as f32),+)
             }
 
             pub fn norm_squared(self) -> f32 {
@@ -26,10 +26,6 @@ macro_rules! vector_space {
 
             pub fn norm(self) -> f32 {
                 self.norm_squared().sqrt()
-            }
-         
-            pub fn normalized(self) -> Self {
-                self / self.norm()
             }
         }
 
