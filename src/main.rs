@@ -41,9 +41,11 @@ fn main() {
 
     // text
     let ft = text::init_library().unwrap();
-    let mut font = text::Font::open(&ft, "/usr/share/fonts/TTF/DejaVuSerif.ttf", 64).unwrap();
+    let mut font = text::Font::open(&ft, "/usr/share/fonts/TTF/DejaVuSerif.ttf", 32).unwrap();
     let font_atlas = font.make_atlas().unwrap();
-    let text = Text::new("Hello, world!", &font_atlas);
+    let text  = Text::new("Hello, world!", Vector2::new(30., 100.), &mut font, &font_atlas);
+    let text2 = Text::new("Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod",
+        Vector2::new(30., 170.), &mut font, &font_atlas);
 
     // load image
     let img = image::open("resources/nav.png").unwrap().into_rgb();
@@ -94,6 +96,7 @@ fn main() {
         card_shader.draw(&quad);
 
         text_shader.draw(&text);
+        text_shader.draw(&text2);
 
         window.swap_buffers();
 

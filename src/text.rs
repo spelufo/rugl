@@ -2,6 +2,8 @@ use crate::gpu;
 use crate::gpu::{Attr, PointerConfig};
 use crate::math::*;
 
+// TODO: Remove. Used for debugging. Should be 1 for pixel perfect rendering.
+const TEXTURE_MAGNIFICATION: f32 = 1.0;
 
 pub fn init_library() -> Result<freetype::Library, freetype::Error> {
     freetype::Library::init()
@@ -10,15 +12,18 @@ pub fn init_library() -> Result<freetype::Library, freetype::Error> {
 pub struct Font<'a> {
     _ft: &'a freetype::Library,
     face: freetype::Face,
+    size_px: u32,
 }
 
 impl<'a> Font<'a> {
     pub fn open(ft: &'a freetype::Library, path: &str, font_size_px: u32) -> Result<Font<'a>, freetype::Error> {
         let face = ft.new_face(path, 0)?;
-        face.set_pixel_sizes(0, font_size_px)?;
+        let size_px = ((font_size_px as f32) * TEXTURE_MAGNIFICATION) as u32;
+        face.set_pixel_sizes(0, size_px)?;
         Ok(Font {
             _ft: ft,
             face,
+            size_px,
         })
     }
 
@@ -29,6 +34,12 @@ impl<'a> Font<'a> {
     pub fn load_char(&mut self, c: char, load_flags: freetype::face::LoadFlag) -> Result<freetype::GlyphSlot, freetype::Error> {
         self.face.load_char(c as usize, load_flags)?;
         Ok(*self.face.glyph())
+    }
+
+    pub fn get_kerning(&mut self, c0: char, c1: char) -> Result<freetype::Vector, freetype::Error> {
+        let i0 = self.face.get_char_index(c0 as usize);
+        let i1 = self.face.get_char_index(c1 as usize);
+        self.face.get_kerning(i0, i1, freetype::face::KerningMode::KerningDefault)
     }
 
     pub fn char_bitmap(&mut self, c: char) -> Result<freetype::Bitmap, freetype::Error> {
@@ -55,8 +66,8 @@ impl Atlas {
             if let Ok(glyph) = font.load_char(c as char, freetype::face::LoadFlag::DEFAULT) {
                 let glpyh_metrics = glyph.metrics();
                 metrics[c as usize] = glpyh_metrics;
-                let w = glpyh_metrics.width as i32 >> 6;
-                let h = glpyh_metrics.height as i32 >> 6;
+                let w = fixed64_round(glpyh_metrics.width);
+                let h = fixed64_round(glpyh_metrics.height);
                 tex_coords[c as usize] = RectangleI::new(Vector2I::new(width, 0), w, h);
                 width += w;
                 height = height.max(h);
@@ -82,7 +93,9 @@ impl Atlas {
                         let yr = (y - bounds.min.y) as usize;
                         let xr = (x - bounds.min.x) as usize;
                         let i: usize = bitmap_pitch * yr + xr;
+                        if i < bitmap_buffer.len() {
                             image.put_pixel(x as u32, y as u32, image::Luma([bitmap_buffer[i]]));
+                        }
                     }
                 }
             }
@@ -112,8 +125,8 @@ impl Atlas {
             let height = self.height() as f32;
             let r = self.tex_coords[i];
             Some(Rectangle {
-                min: Vector2::new(r.min.x as f32 / width, r.max.y as f32 / height),
-                max: Vector2::new(r.max.x as f32 / width, r.min.y as f32 / height),
+                min: Vector2::new(r.min.x as f32 / width, r.min.y as f32 / height),
+                max: Vector2::new(r.max.x as f32 / width, r.max.y as f32 / height),
             })
         }
     }
@@ -134,7 +147,7 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(s: &str, atlas: &Atlas) -> Text {
+    pub fn new(s: &str, position: Vector2, font: &mut Font, atlas: &Atlas) -> Text {
 
         let mut texture = gpu::Texture::new();
         texture.load_data(gpu::TextureFormat::Alpha, atlas.width(), atlas.height(), atlas.image_data());
@@ -142,29 +155,42 @@ impl Text {
         let mut positions: Vec<Vector2> = Vec::new();
         let mut tex_coords: Vec<Vector2> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
-        let mut pen = Vector2::ZERO;        
+        let mut pen = position;
 
+        let scale = 1.0 / TEXTURE_MAGNIFICATION;
         let mut i = 0;
+        let mut last_char: Option<char> = None;
         for c in s.chars() {
             if let Some(uvs) = atlas.tex_coords(c) {
-                indices.extend_from_slice(&[i, i+3, i+1, i+3, i+2, i+1]);
+                indices.extend_from_slice(&[i, i+1, i+3, i+3, i+1, i+2]);
                 let metrics = atlas.metrics(c);
-                let w = (metrics.width >> 6) as f32;
-                let h = (metrics.height >> 6) as f32;
-                positions.push(pen);
-                positions.push(pen + Vector2::new(w, 0.));
-                positions.push(pen + Vector2::new(w, h));
-                positions.push(pen + Vector2::new(0., h));
-                    tex_coords.push(uvs.min);
-                    tex_coords.push(Vector2::new(uvs.max.x, uvs.min.y));
-                    tex_coords.push(uvs.max);
-                    tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
-                pen.x += w + 1.;
+                let w = scale * fixed64_to_f32(metrics.width);
+                let h = scale * fixed64_to_f32(metrics.height);
+                let top_left = pen + scale * Vector2::new(
+                    fixed64_to_f32(metrics.horiBearingX),
+                    -fixed64_to_f32(metrics.horiBearingY),
+                );
+                positions.push(top_left);
+                positions.push(top_left + Vector2::new(w, 0.));
+                positions.push(top_left + Vector2::new(w, h));
+                positions.push(top_left + Vector2::new(0., h));
+                tex_coords.push(uvs.min);
+                tex_coords.push(Vector2::new(uvs.max.x, uvs.min.y));
+                tex_coords.push(uvs.max);
+                tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
+                pen.x += scale * fixed64_to_f32(metrics.horiAdvance);
+                if let Some(last_char) = last_char {
+                    if let Ok(kerning) = font.get_kerning(last_char, c) {
+                        pen.x += fixed64_to_f32(kerning.x)
+                    }
+                }
                 i += 4;
+                last_char = Some(c);
             } else {
                 if c == ' ' {
-                    pen.x += 20.0;
+                    pen.x += font.size_px as f32 / 3.0;  // TODO: Text layout.
                 }
+                last_char = None;
             }
         }
         let vertex_array = gpu::VertexArray::new();
@@ -238,4 +264,17 @@ impl TextShader {
         self.program.activate();
         text.draw();
     }
+}
+
+fn fixed64_round(x: freetype::freetype_sys::FT_Pos) -> i32 {
+    let mut res = x as i32 >> 6;
+    if (x & 63) != 0 {
+        res += 1
+    }
+    res
+}
+
+fn fixed64_to_f32(x: freetype::freetype_sys::FT_Pos) -> f32 {
+    // truncates with precision 0.25
+    (x >> 4) as f32 / 4.0
 }
