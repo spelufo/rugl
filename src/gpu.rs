@@ -14,6 +14,8 @@ pub fn setup() {
         gl::PixelStorei(gl::UNPACK_ALIGNMENT, 1);
         gl::Enable(gl::BLEND);
         gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
+        gl::Enable(gl::MULTISAMPLE);
+        gl::Enable(gl::FRAMEBUFFER_SRGB);
     }
 }
 
@@ -335,8 +337,8 @@ impl Texture {
         let mut texture = Texture { id };
         texture.set_min_filter_mode(TextureMinFilterMode::Linear);
         texture.set_mag_filter_mode(TextureMagFilterMode::Nearest);
-        // texture.set_s_wrap_mode(TextureWrapMode::ClampToEdge);
-        // texture.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
+        texture.set_s_wrap_mode(TextureWrapMode::ClampToEdge);
+        texture.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
         texture
     }
 

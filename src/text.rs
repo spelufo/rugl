@@ -2,51 +2,67 @@ use crate::gpu;
 use crate::gpu::{Attr, PointerConfig};
 use crate::math::*;
 
-// TODO: Remove. Used for debugging. Should be 1 for pixel perfect rendering.
-const TEXTURE_MAGNIFICATION: f32 = 1.0;
 
 pub fn init_library() -> Result<freetype::Library, freetype::Error> {
     freetype::Library::init()
 }
 
+
 pub struct Font<'a> {
-    _ft: &'a freetype::Library,
-    face: freetype::Face,
-    size_px: u32,
+    face: Face<'a>,
+    atlas: Atlas,
 }
 
 impl<'a> Font<'a> {
-    pub fn open(ft: &'a freetype::Library, path: &str, font_size_px: u32) -> Result<Font<'a>, freetype::Error> {
+    pub fn open(path: &str, font_size_px: u32, ft: &'a freetype::Library) -> Result<Font<'a>, freetype::Error> {
+        let face = Face::open(path, font_size_px, ft)?;
+        let atlas = Atlas::new(&face)?;
+        Ok(Font { face, atlas })
+    }
+
+    pub fn atlas(&self) -> &Atlas {
+        &self.atlas
+    }
+
+    pub fn face(&self) -> &Face {
+        &self.face
+    }
+
+    pub fn size_px(&self) -> u32 {
+        self.face.size_px
+    }
+
+    pub fn kerning(&self, c0: char, c1: char) -> Result<freetype::Vector, freetype::Error> {
+        self.face.kerning(c0, c1)
+    }
+}
+
+
+pub struct Face<'a> {
+    size_px: u32,
+    face: freetype::Face,
+    _ft: &'a freetype::Library,
+}
+
+impl<'a> Face<'a> {
+    pub fn open(path: &str, size_px: u32, ft: &'a freetype::Library) -> Result<Face<'a>, freetype::Error> {
         let face = ft.new_face(path, 0)?;
-        let size_px = ((font_size_px as f32) * TEXTURE_MAGNIFICATION) as u32;
         face.set_pixel_sizes(0, size_px)?;
-        Ok(Font {
-            _ft: ft,
-            face,
-            size_px,
-        })
+        Ok(Face { size_px, face, _ft: ft })
     }
 
-    pub fn make_atlas(&mut self) -> Result<Atlas, freetype::Error> {
-        Atlas::new(self)
-    }
-
-    pub fn load_char(&mut self, c: char, load_flags: freetype::face::LoadFlag) -> Result<freetype::GlyphSlot, freetype::Error> {
+    pub fn load_char(&self, c: char, load_flags: freetype::face::LoadFlag) -> Result<freetype::GlyphSlot, freetype::Error> {
         self.face.load_char(c as usize, load_flags)?;
         Ok(*self.face.glyph())
     }
 
-    pub fn get_kerning(&mut self, c0: char, c1: char) -> Result<freetype::Vector, freetype::Error> {
+    pub fn kerning(&self, c0: char, c1: char) -> Result<freetype::Vector, freetype::Error> {
         let i0 = self.face.get_char_index(c0 as usize);
         let i1 = self.face.get_char_index(c1 as usize);
         self.face.get_kerning(i0, i1, freetype::face::KerningMode::KerningDefault)
     }
-
-    pub fn char_bitmap(&mut self, c: char) -> Result<freetype::Bitmap, freetype::Error> {
-        let glyph = self.load_char(c, freetype::face::LoadFlag::RENDER)?;
-        Ok(glyph.bitmap())
-    }
 }
+
 
 pub struct Atlas {
     image: image::GrayImage,
@@ -55,7 +71,7 @@ pub struct Atlas {
 }
 
 impl Atlas {
-    pub fn new(font: &mut Font) -> Result<Atlas, freetype::Error> {
+    pub fn new(face: &Face) -> Result<Atlas, freetype::Error> {
         let mut width = 0;
         let mut height = 0;
         let mut tex_coords = [RectangleI::ZERO; 128];
@@ -63,13 +79,13 @@ impl Atlas {
 
         let printable_ascii: std::ops::Range<u8> = 0x20..0x7e;
         for c in printable_ascii.clone() {
-            if let Ok(glyph) = font.load_char(c as char, freetype::face::LoadFlag::DEFAULT) {
+            if let Ok(glyph) = face.load_char(c as char, freetype::face::LoadFlag::DEFAULT) {
                 let glpyh_metrics = glyph.metrics();
                 metrics[c as usize] = glpyh_metrics;
                 let w = fixed64_round(glpyh_metrics.width);
                 let h = fixed64_round(glpyh_metrics.height);
                 tex_coords[c as usize] = RectangleI::new(Vector2I::new(width, 0), w, h);
-                width += w;
+                width += w + 1;
                 height = height.max(h);
             } else {
                 println!("Atlas::new: unable to load glyph for char {:?}", c)
@@ -82,7 +98,7 @@ impl Atlas {
         };
 
         for c in printable_ascii {
-            if let Ok(glyph) = font.load_char(c as char, freetype::face::LoadFlag::RENDER) {
+            if let Ok(glyph) = face.load_char(c as char, freetype::face::LoadFlag::RENDER) {
                 let bounds = tex_coords[c as usize];
                 let bitmap = glyph.bitmap();
                 assert!(bitmap.rows() <= bounds.height() && bitmap.width() <= bounds.width());
@@ -112,8 +128,8 @@ impl Atlas {
         self.image.height() as i32
     }
 
-    pub fn image_data(&self) -> &[u8] {
-        &self.image  // TODO: Check. Does this yield a slice of the image data? It seems to work.
+    pub fn data(&self) -> &[u8] {
+        &self.image
     }
 
     pub fn tex_coords(&self, c: char) -> Option<Rectangle> {
@@ -147,20 +163,22 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(s: &str, position: Vector2, font: &mut Font, atlas: &Atlas) -> Text {
+    pub fn new(s: &str, position: Vector2, font: &Font) -> Text {
 
+        let atlas = font.atlas();
         let mut texture = gpu::Texture::new();
-        texture.load_data(gpu::TextureFormat::Alpha, atlas.width(), atlas.height(), atlas.image_data());
+        texture.load_data(gpu::TextureFormat::Alpha, atlas.width(), atlas.height(), atlas.data());
 
         let mut positions: Vec<Vector2> = Vec::new();
         let mut tex_coords: Vec<Vector2> = Vec::new();
         let mut indices: Vec<u32> = Vec::new();
         let mut pen = position;
 
-        let scale = 1.0 / TEXTURE_MAGNIFICATION;
+        let scale = 1.0;
         let mut i = 0;
         let mut last_char: Option<char> = None;
         for c in s.chars() {
+            dbg!(pen);
             if let Some(uvs) = atlas.tex_coords(c) {
                 indices.extend_from_slice(&[i, i+1, i+3, i+3, i+1, i+2]);
                 let metrics = atlas.metrics(c);
@@ -180,7 +198,7 @@ impl Text {
                 tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
                 pen.x += scale * fixed64_to_f32(metrics.horiAdvance);
                 if let Some(last_char) = last_char {
-                    if let Ok(kerning) = font.get_kerning(last_char, c) {
+                    if let Ok(kerning) = font.kerning(last_char, c) {
                         pen.x += fixed64_to_f32(kerning.x)
                     }
                 }
@@ -188,7 +206,7 @@ impl Text {
                 last_char = Some(c);
             } else {
                 if c == ' ' {
-                    pen.x += font.size_px as f32 / 3.0;  // TODO: Text layout.
+                    pen.x += font.size_px() as f32 / 3.0;  // TODO: Text layout.
                 }
                 last_char = None;
             }
