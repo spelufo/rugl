@@ -14,7 +14,7 @@ void main() {
     vec3 magenta = vec3(1.0, 0.0, 1.0);
     vec3 black = vec3(0.0, 0.0, 0.0);
     float a = texture(texture0, tex_coords).a;
-    if(a < 0.2)
+    if(a < 0.01)
         discard;
     FragColor = vec4(black, a);
 }

@@ -7,6 +7,9 @@ pub fn init_library() -> Result<freetype::Library, freetype::Error> {
     freetype::Library::init()
 }
 
+const UPSCALE_POWER: i32 = 0;
+const NUM_GLYPH_RASTERIZATIONS_POWER: i32 = 0;
+
 
 pub struct Font<'a> {
     face: Face<'a>,
@@ -15,7 +18,7 @@ pub struct Font<'a> {
 
 impl<'a> Font<'a> {
     pub fn open(path: &str, font_size_px: u32, ft: &'a freetype::Library) -> Result<Font<'a>, freetype::Error> {
-        let face = Face::open(path, font_size_px, ft)?;
+        let face = Face::open(path, (1 << UPSCALE_POWER) as u32 * font_size_px, ft)?;
         let atlas = Atlas::new(&face)?;
         Ok(Font { face, atlas })
     }
@@ -82,11 +85,11 @@ impl Atlas {
             if let Ok(glyph) = face.load_char(c as char, freetype::face::LoadFlag::DEFAULT) {
                 let glpyh_metrics = glyph.metrics();
                 metrics[c as usize] = glpyh_metrics;
-                let w = fixed64_round(glpyh_metrics.width);
-                let h = fixed64_round(glpyh_metrics.height);
+                let w = fixed64_ceil(glpyh_metrics.width);
+                let h = fixed64_ceil(glpyh_metrics.height);
                 tex_coords[c as usize] = RectangleI::new(Vector2I::new(width, 0), w, h);
                 width += w + 1;
-                height = height.max(h);
+                height = height.max(h + 1);
             } else {
                 println!("Atlas::new: unable to load glyph for char {:?}", c)
             }
@@ -101,17 +104,18 @@ impl Atlas {
             if let Ok(glyph) = face.load_char(c as char, freetype::face::LoadFlag::RENDER) {
                 let bounds = tex_coords[c as usize];
                 let bitmap = glyph.bitmap();
-                assert!(bitmap.rows() <= bounds.height() && bitmap.width() <= bounds.width());
+                // dbg!(bounds, bitmap.width(), bitmap.rows());
+                assert!(bitmap.rows() >= bounds.height() && bitmap.width() >= bounds.width());
+                // tex_coords[c as usize].max.y += bitmap.rows() - bounds.height();
+                // tex_coords[c as usize].max.x += bitmap.width() - bounds.width();
+                // let bounds = tex_coords[c as usize];
+                assert!(bounds.max.y <= image.height() as i32 && bounds.max.x <= image.width() as i32);
                 let bitmap_pitch = bitmap.pitch() as usize;
                 let bitmap_buffer = bitmap.buffer();
-                for y in bounds.min.y .. bounds.max.y {
-                    for x in bounds.min.x .. bounds.max.x {
-                        let yr = (y - bounds.min.y) as usize;
-                        let xr = (x - bounds.min.x) as usize;
-                        let i: usize = bitmap_pitch * yr + xr;
-                        if i < bitmap_buffer.len() {
-                            image.put_pixel(x as u32, y as u32, image::Luma([bitmap_buffer[i]]));
-                        }
+                for y in 0..bitmap.rows() {
+                    for x in 0 .. bitmap.width() {
+                        let i: usize = bitmap_pitch * y as usize + x as usize;
+                        image.put_pixel((bounds.min.x + x) as u32, (bounds.min.y + y) as u32, image::Luma([bitmap_buffer[i]]));
                     }
                 }
             }
@@ -174,11 +178,11 @@ impl Text {
         let mut indices: Vec<u32> = Vec::new();
         let mut pen = position;
 
-        let scale = 1.0;
+        let scale = 1. / (1 << UPSCALE_POWER) as f32;
         let mut i = 0;
         let mut last_char: Option<char> = None;
         for c in s.chars() {
-            dbg!(pen);
+            // dbg!(pen);
             if let Some(uvs) = atlas.tex_coords(c) {
                 indices.extend_from_slice(&[i, i+1, i+3, i+3, i+1, i+2]);
                 let metrics = atlas.metrics(c);
@@ -206,7 +210,7 @@ impl Text {
                 last_char = Some(c);
             } else {
                 if c == ' ' {
-                    pen.x += font.size_px() as f32 / 3.0;  // TODO: Text layout.
+                    pen.x += scale * font.size_px() as f32 / 3.0;  // TODO: Text layout.
                 }
                 last_char = None;
             }
@@ -284,7 +288,7 @@ impl TextShader {
     }
 }
 
-fn fixed64_round(x: freetype::freetype_sys::FT_Pos) -> i32 {
+fn fixed64_ceil(x: freetype::freetype_sys::FT_Pos) -> i32 {
     let mut res = x as i32 >> 6;
     if (x & 63) != 0 {
         res += 1
@@ -293,6 +297,6 @@ fn fixed64_round(x: freetype::freetype_sys::FT_Pos) -> i32 {
 }
 
 fn fixed64_to_f32(x: freetype::freetype_sys::FT_Pos) -> f32 {
-    // truncates with precision 0.25
-    (x >> 4) as f32 / 4.0
+    let precision = NUM_GLYPH_RASTERIZATIONS_POWER - UPSCALE_POWER;
+    (x >> (6 - precision)) as f32 / 2.0_f32.powf(precision as f32)
 }

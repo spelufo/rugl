@@ -15,7 +15,23 @@ pub fn setup() {
         gl::Enable(gl::BLEND);
         gl::BlendFunc(gl::SRC_ALPHA, gl::ONE_MINUS_SRC_ALPHA);
         gl::Enable(gl::MULTISAMPLE);
-        gl::Enable(gl::FRAMEBUFFER_SRGB);
+        gl::Disable(gl::FRAMEBUFFER_SRGB);  // do gamma correction in shaders
+    }
+}
+
+pub fn is_enabled(feature: u32) -> bool {
+    (unsafe { gl::IsEnabled(feature) }) == gl::TRUE
+}
+
+pub fn enable(feature: u32) {
+    unsafe {
+        gl::Enable(feature);
+    }
+}
+
+pub fn disable(feature: u32) {
+    unsafe {
+        gl::Disable(feature);
     }
 }
 
@@ -336,7 +352,7 @@ impl Texture {
         // TODO: Check failure
         let mut texture = Texture { id };
         texture.set_min_filter_mode(TextureMinFilterMode::Linear);
-        texture.set_mag_filter_mode(TextureMagFilterMode::Nearest);
+        texture.set_mag_filter_mode(TextureMagFilterMode::Linear);
         texture.set_s_wrap_mode(TextureWrapMode::ClampToEdge);
         texture.set_t_wrap_mode(TextureWrapMode::ClampToEdge);
         texture

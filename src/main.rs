@@ -25,16 +25,20 @@ fn main() {
 
     // text
     let freetype = text::init_library().unwrap();
-    let font = Font::open("/usr/share/fonts/TTF/DejaVuSerif.ttf", 18, &freetype).unwrap();
-    let text  = Text::new("Hello, world!",
-        Vector2::new(30., 100.), &font);
-    let text2 = Text::new("Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod",
-        Vector2::new(30., 170.), &font);
+    let font = Font::open("/usr/share/fonts/TTF/DejaVuSerif.ttf", 16, &freetype).unwrap();
+    let text  = Text::new("Hello, world!", Vector2::new(30., 100.), &font);
+    let lorem = "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod";
+    let text2 = Text::new(lorem, Vector2::new(30., 170.), &font);
+    let font2 = Font::open("/usr/share/fonts/TTF/DejaVuSerif.ttf", 24, &freetype).unwrap();
+    let text3 = Text::new(lorem, Vector2::new(30., 270.), &font2);
+
 
     // shaders
     let mut text_shader = TextShader::new().unwrap();
     text_shader.set_screen_size(Vector2::new(width as f32, height as f32));
 
+    let mut msaa = false;
+    let mut gamma_correction = false;
 
     while !window.should_close() {
         // draw
@@ -42,6 +46,7 @@ fn main() {
 
         text_shader.draw(&text);
         text_shader.draw(&text2);
+        text_shader.draw(&text3);
 
         window.swap_buffers();
 
@@ -50,6 +55,8 @@ fn main() {
         for (_, event) in glfw::flush_messages(&events) {
             match event {
                 WindowEvent::Key(Key::Escape, _, Action::Press, _) => window.set_should_close(true),
+                WindowEvent::Key(Key::A, _, Action::Press, _) => toggle_gpu_feature(&mut msaa, gl::MULTISAMPLE),
+                WindowEvent::Key(Key::G, _, Action::Press, _) => toggle_gpu_feature(&mut gamma_correction, gl::FRAMEBUFFER_SRGB),
                 // WindowEvent::Focus(false) => camera_ctl.deactivate(&mut window),
                 // WindowEvent::CursorEnter(false) => camera_ctl.deactivate(&mut window),
                 // WindowEvent::MouseButton(_, Action::Press, _) => camera_ctl.activate(&mut window),
@@ -78,4 +85,14 @@ fn setup_input(window: &mut glfw::Window) {
     window.set_cursor_enter_polling(true);
 }
 
+fn toggle_gpu_feature(state: &mut bool, flag: u32) {
+    *state = !*state;
+    if *state {
+        gpu::enable(flag);
+    } else {
+        gpu::disable(flag);
+    }
 
+    dbg!(gpu::is_enabled(gl::MULTISAMPLE)); // doesn't change
+    dbg!(gpu::is_enabled(gl::FRAMEBUFFER_SRGB)); // changes but has no effect?
+}
