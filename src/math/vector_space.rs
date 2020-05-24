@@ -9,7 +9,7 @@ macro_rules! sum {
 
 macro_rules! vector_space {
     ($v:ident $s:ty {$($c:ident: $ct:ty),+}) => {
-        #[derive(Debug, Copy, Clone, PartialEq)]
+        #[derive(Debug, Copy, Clone, Default, PartialEq)]
         #[repr(C)]
         pub struct $v {
             $(pub $c: $ct),+

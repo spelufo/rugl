@@ -1,6 +1,6 @@
 macro_rules! rectangle_impl {
     ($Rectangle:ident, $Vector2:ty, $s:ty) => {
-        #[derive(Copy, Clone, Debug, PartialEq)]
+        #[derive(Copy, Clone, Debug, Default, PartialEq)]
         pub struct $Rectangle {
             pub min: $Vector2,
             pub max: $Vector2,

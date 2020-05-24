@@ -338,7 +338,7 @@ impl TextureUnit {
 }
 
 
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub struct Texture {
     id: u32,
 }
@@ -358,7 +358,7 @@ impl Texture {
         texture
     }
 
-    pub fn load_data<T>(&mut self, format: TextureFormat, width: i32, height: i32, data: &[T]) {
+    pub fn allocate(&mut self, width: i32, height: i32, format: TextureFormat) {
         unsafe {
             gl::BindTexture(gl::TEXTURE_2D, self.id);
             gl::TexImage2D(
@@ -368,6 +368,40 @@ impl Texture {
                 width as GLsizei,
                 height as GLsizei,
                 0,
+                format as u32,
+                gl::UNSIGNED_BYTE,
+                std::ptr::null() as *const GLvoid
+            );
+        }
+    }
+
+    pub fn load_data<T>(&mut self, width: i32, height: i32, format: TextureFormat, data: &[T]) {
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexImage2D(
+                gl::TEXTURE_2D,
+                0,
+                format as i32,
+                width as GLsizei,
+                height as GLsizei,
+                0,
+                format as u32,
+                gl::UNSIGNED_BYTE,
+                data.as_ptr() as *const GLvoid
+            );
+        }
+    }
+
+    pub fn load_region_data<T>(&mut self, region: RectangleI, format: TextureFormat, data: &[T]) {
+        unsafe {
+            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            gl::TexSubImage2D(
+                gl::TEXTURE_2D,
+                0,
+                region.min.x,
+                region.min.y,
+                region.width(),
+                region.height(),
                 format as u32,
                 gl::UNSIGNED_BYTE,
                 data.as_ptr() as *const GLvoid

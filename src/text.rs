@@ -1,6 +1,8 @@
 use crate::gpu;
 use crate::gpu::{Attr, PointerConfig};
 use crate::math::*;
+use std::borrow::Borrow;
+use std::ops::RangeInclusive;
 
 
 pub fn init_library() -> Result<freetype::Library, freetype::Error> {
@@ -19,23 +21,28 @@ pub struct Font<'a> {
 impl<'a> Font<'a> {
     pub fn open(path: &str, font_size_px: u32, ft: &'a freetype::Library) -> Result<Font<'a>, freetype::Error> {
         let face = Face::open(path, (1 << UPSCALE_POWER) as u32 * font_size_px, ft)?;
-        let atlas = Atlas::new(&face)?;
+        let atlas = Atlas::new();
+        // atlas.load_page(0, 0x20..0x7e, &mut face); // printable_ascii
         Ok(Font { face, atlas })
     }
 
-    pub fn atlas(&self) -> &Atlas {
-        &self.atlas
+    pub fn load_page(&mut self, page_num: u32, range: RangeInclusive<u8>) {
+        self.atlas.load_page(page_num, range, &self.face);
     }
 
-    pub fn face(&self) -> &Face {
-        &self.face
+    pub fn glyph(&self, c: char) -> Option<&AtlasGlyph> {
+        self.atlas.glyph(c)
+    }
+
+    pub fn tex_coords(&self, c: char) -> Option<Rectangle> {
+        self.atlas.tex_coords(c)
     }
 
     pub fn size_px(&self) -> u32 {
         self.face.size_px
     }
 
-    pub fn kerning(&self, c0: char, c1: char) -> Result<freetype::Vector, freetype::Error> {
+    pub fn kerning(&self, c0: char, c1: char) -> Result<Vector2I, freetype::Error> {
         self.face.kerning(c0, c1)
     }
 }
@@ -59,148 +66,213 @@ impl<'a> Face<'a> {
         Ok(*self.face.glyph())
     }
 
-    pub fn kerning(&self, c0: char, c1: char) -> Result<freetype::Vector, freetype::Error> {
+    pub fn kerning(&self, c0: char, c1: char) -> Result<Vector2I, freetype::Error> {
         let i0 = self.face.get_char_index(c0 as usize);
         let i1 = self.face.get_char_index(c1 as usize);
-        self.face.get_kerning(i0, i1, freetype::face::KerningMode::KerningDefault)
+        let kerning_ft = self.face.get_kerning(i0, i1, freetype::face::KerningMode::KerningDefault)?;
+        Ok(Vector2I::new(kerning_ft.x as i32, kerning_ft.y as i32))
     }
 }
 
 
 pub struct Atlas {
-    image: image::GrayImage,
-    tex_coords: [RectangleI; 128],
-    metrics: [freetype::GlyphMetrics; 128],
+    // Atlas covers the first 64k unicode codepoints, the basic multilingual plane.
+    // Page i, if present, has data for codepoints [256*i, 256*(i+1)).
+    pages: [Option<Box<AtlasPage>>; 256],
+}
+
+impl Default for Atlas {
+    fn default() -> Self {
+        let mut x: Self = unsafe { std::mem::zeroed() };
+        for i in 0..256 {
+            x.pages[i] = None;
+        }
+        x
+    }
+}
+
+pub struct AtlasPage {
+    texture: gpu::Texture,
+    width: i32,
+    height: i32,
+    glyphs: [Option<Box<AtlasGlyph>>; 256],
+}
+
+impl Default for AtlasPage {
+    fn default() -> Self {
+        let mut x: Self = unsafe { std::mem::zeroed() };
+        for i in 0..256 {
+            x.glyphs[i] = None;
+        }
+        x
+    }
+}
+
+#[derive(Copy, Clone, Default, Debug)]
+pub struct AtlasGlyph {
+    tex_coords: RectangleI,  // px
+    size: Vector2I,
+    horizontal_bearing: Vector2I,  // 26.6 px
+    vertical_bearing: Vector2I,  // 26.6 px
+    horizontal_advance: i32,  // 26.6 px
+    vertical_advance: i32,  // 26.6 px
+}
+
+impl AtlasGlyph {
+    pub fn width(&self) -> i32{
+        self.size.x
+    }
+
+    pub fn height(&self) -> i32 {
+        self.size.y
+    }
 }
 
 impl Atlas {
-    pub fn new(face: &Face) -> Result<Atlas, freetype::Error> {
+    pub fn new() -> Atlas {
+        Default::default()
+    }
+
+    pub fn load_page(&mut self, page_num: u32, range: RangeInclusive<u8>, face: &Face) {
+        assert!(page_num < 256);
+        let page_num = page_num as usize;
+        let mut page: Box<AtlasPage> = Default::default();
         let mut width = 0;
         let mut height = 0;
-        let mut tex_coords = [RectangleI::ZERO; 128];
-        let mut metrics: [freetype::GlyphMetrics; 128] = unsafe { std::mem::zeroed() };
-
-        let printable_ascii: std::ops::Range<u8> = 0x20..0x7e;
-        for c in printable_ascii.clone() {
-            if let Ok(glyph) = face.load_char(c as char, freetype::face::LoadFlag::DEFAULT) {
-                let glpyh_metrics = glyph.metrics();
-                metrics[c as usize] = glpyh_metrics;
-                let w = fixed64_ceil(glpyh_metrics.width);
-                let h = fixed64_ceil(glpyh_metrics.height);
-                tex_coords[c as usize] = RectangleI::new(Vector2I::new(width, 0), w, h);
-                width += w + 1;
-                height = height.max(h + 1);
-            } else {
-                println!("Atlas::new: unable to load glyph for char {:?}", c)
-            }
-        }
-
-        let mut image = match image::DynamicImage::new_luma8(width as u32, height as u32) {
-            image::DynamicImage::ImageLuma8(image) => image,
-            _ => unreachable!(),
-        };
-
-        for c in printable_ascii {
-            if let Ok(glyph) = face.load_char(c as char, freetype::face::LoadFlag::RENDER) {
-                let bounds = tex_coords[c as usize];
-                let bitmap = glyph.bitmap();
-                // dbg!(bounds, bitmap.width(), bitmap.rows());
-                assert!(bitmap.rows() >= bounds.height() && bitmap.width() >= bounds.width());
-                // tex_coords[c as usize].max.y += bitmap.rows() - bounds.height();
-                // tex_coords[c as usize].max.x += bitmap.width() - bounds.width();
-                // let bounds = tex_coords[c as usize];
-                assert!(bounds.max.y <= image.height() as i32 && bounds.max.x <= image.width() as i32);
-                let bitmap_pitch = bitmap.pitch() as usize;
-                let bitmap_buffer = bitmap.buffer();
-                for y in 0..bitmap.rows() {
-                    for x in 0 .. bitmap.width() {
-                        let i: usize = bitmap_pitch * y as usize + x as usize;
-                        image.put_pixel((bounds.min.x + x) as u32, (bounds.min.y + y) as u32, image::Luma([bitmap_buffer[i]]));
-                    }
+        
+        for i in range.clone() {
+            if let Some(c) = std::char::from_u32(256*(page_num as u32) + i as u32) {
+                let i = i as usize;
+                if let Ok(ft_glyph) = face.load_char(c, freetype::face::LoadFlag::DEFAULT) {
+                    let m = ft_glyph.metrics();
+                    let w = fixed64_ceil(m.width as i32);
+                    let h = fixed64_ceil(m.height as i32);
+                    page.glyphs[i] = Some(Box::new(AtlasGlyph {
+                        tex_coords: RectangleI::new(Vector2I::new(width, 0), w, h),
+                        size: Vector2I::new(w, h),
+                        horizontal_bearing: Vector2I::new(m.horiBearingX as i32, m.horiBearingY as i32),
+                        vertical_bearing: Vector2I::new(m.vertBearingX as i32, m.vertBearingY as i32),
+                        horizontal_advance: m.horiAdvance as i32,
+                        vertical_advance: m.vertAdvance as i32,
+                    }));
+                    width += w + 1;
+                    height = height.max(h + 1);
+                } else {
+                    println!("Atlas::new: unable to load glyph for char {:?}", c)
                 }
             }
         }
 
-        Ok(Atlas { image, tex_coords, metrics })
+        let mut texture = gpu::Texture::new();
+        texture.allocate(width, height, gpu::TextureFormat::Alpha);
+        page.texture = texture;
+
+        for i in range {
+            if let Some(c) = std::char::from_u32(256*(page_num as u32) + i as u32) {
+                let i = i as usize;
+                if let Ok(ft_glyph) = face.load_char(c, freetype::face::LoadFlag::RENDER) {
+                    let bitmap = ft_glyph.bitmap();
+                    let glyph = page.glyphs[i].as_mut().unwrap();
+                    let region = glyph.tex_coords;
+                    // dbg!(region, bitmap.width(), bitmap.rows());
+                    assert!(bitmap.rows() >= region.height() && bitmap.width() >= region.width());
+                    // glyph.tex_coords.max.y += bitmap.rows() - region.height();
+                    // glyph.tex_coords.max.x += bitmap.width() - region.width();
+                    // let region = glyph.tex_coords;
+                    assert!(region.max.y <= height && region.max.x <= width);
+                    texture.load_region_data(region, gpu::TextureFormat::Alpha, bitmap.buffer());
+                    // let bitmap_pitch = bitmap.pitch() as usize;
+                    // let bitmap_buffer = bitmap.buffer();
+                    // for y in 0..bitmap.rows() {
+                    //     for x in 0 .. bitmap.width() {
+                    //         let i: usize = bitmap_pitch * y as usize + x as usize;
+                    //         image.put_pixel((region.min.x + x) as u32, (region.min.y + y) as u32, image::Luma([bitmap_buffer[i]]));
+                    //     }
+                    // }
+                }
+            }
+        }
+
+        self.pages[page_num] = Some(page);
     }
 
-    pub fn width(&self) -> i32 {
-        self.image.width() as i32
-    }
-
-    pub fn height(&self) -> i32 {
-        self.image.height() as i32
-    }
-
-    pub fn data(&self) -> &[u8] {
-        &self.image
-    }
-
-    pub fn tex_coords(&self, c: char) -> Option<Rectangle> {
-        let i = c as usize;
-        if i >= 128 || self.tex_coords[i] == RectangleI::ZERO {
-            None
-        } else {
-            let width = self.width() as f32;
-            let height = self.height() as f32;
-            let r = self.tex_coords[i];
-            Some(Rectangle {
-                min: Vector2::new(r.min.x as f32 / width, r.min.y as f32 / height),
-                max: Vector2::new(r.max.x as f32 / width, r.max.y as f32 / height),
-            })
+    fn glyph_page(&self, c: char) -> Option<&AtlasPage> {
+        let page_num = (c as u32 / 256) as usize;
+        match self.pages[page_num] {
+            Some(ref page) => Some(page.borrow()),
+            None => None,
         }
     }
 
-    pub fn metrics(&self, c: char) -> freetype::GlyphMetrics {
-        self.metrics[c as usize]
+    pub fn glyph(&self, c: char) -> Option<&AtlasGlyph> {
+        let page = self.glyph_page(c)?;
+        let i = (c as u32 % 256) as usize;
+        match page.glyphs[i] {
+            Some(ref glyph) => Some(glyph.borrow()),
+            None => None,
+        }
+    }
+
+    pub fn tex_coords(&self, c: char) -> Option<Rectangle> {
+        let page = self.glyph_page(c)?;
+        let width = page.width as f32;
+        let height = page.height as f32;
+        let glyph = self.glyph(c)?;
+        let r = glyph.tex_coords;
+        Some(Rectangle {
+            min: Vector2::new(r.min.x as f32 / width, r.min.y as f32 / height),
+            max: Vector2::new(r.max.x as f32 / width, r.max.y as f32 / height),
+        })
     }
 }
 
 
 #[derive(Debug)]
 pub struct Text {
-    positions: Vec<Vector2>,
-    tex_coords: Vec<Vector2>,
-    indices: Vec<u32>,
-    texture: gpu::Texture,
-    vertex_array: gpu::VertexArray,
+    gpu_data: Vec<TextGpuData>,
 }
 
 impl Text {
-    pub fn new(s: &str, position: Vector2, font: &Font) -> Text {
-
-        let atlas = font.atlas();
-        let mut texture = gpu::Texture::new();
-        texture.load_data(gpu::TextureFormat::Alpha, atlas.width(), atlas.height(), atlas.data());
-
-        let mut positions: Vec<Vector2> = Vec::new();
-        let mut tex_coords: Vec<Vector2> = Vec::new();
-        let mut indices: Vec<u32> = Vec::new();
+    pub fn new(s: &str, position: Vector2, font: &mut Font) -> Text {
+        let mut gpu_data = Vec::<TextGpuData>::new();
         let mut pen = position;
-
         let scale = 1. / (1 << UPSCALE_POWER) as f32;
         let mut i = 0;
         let mut last_char: Option<char> = None;
+
         for c in s.chars() {
-            // dbg!(pen);
-            if let Some(uvs) = atlas.tex_coords(c) {
-                indices.extend_from_slice(&[i, i+1, i+3, i+3, i+1, i+2]);
-                let metrics = atlas.metrics(c);
-                let w = scale * fixed64_to_f32(metrics.width);
-                let h = scale * fixed64_to_f32(metrics.height);
+            let unicode_page = c as u32 / 256;
+            if gpu_data.iter().find(|d| d.unicode_page == unicode_page).is_none() {
+                gpu_data.push(TextGpuData::new(unicode_page));
+            }
+        }
+
+        for data in gpu_data.iter() {
+            data.load_buffers();
+            font.load_page(data.unicode_page, 0..=255);
+        }
+
+        for c in s.chars() {
+            let unicode_page = c as u32 / 256;
+            let data = gpu_data.iter_mut().find(|d| d.unicode_page == unicode_page).unwrap();
+            if let Some(glyph) = font.glyph(c) {
+                let uvs = font.tex_coords(c).unwrap();
+                data.indices.extend_from_slice(&[i, i+1, i+3, i+3, i+1, i+2]);
+                let w = scale * fixed64_to_f32(glyph.width());
+                let h = scale * fixed64_to_f32(glyph.height());
                 let top_left = pen + scale * Vector2::new(
-                    fixed64_to_f32(metrics.horiBearingX),
-                    -fixed64_to_f32(metrics.horiBearingY),
+                    fixed64_to_f32(glyph.horizontal_bearing.x),
+                    -fixed64_to_f32(glyph.horizontal_bearing.y),
                 );
-                positions.push(top_left);
-                positions.push(top_left + Vector2::new(w, 0.));
-                positions.push(top_left + Vector2::new(w, h));
-                positions.push(top_left + Vector2::new(0., h));
-                tex_coords.push(uvs.min);
-                tex_coords.push(Vector2::new(uvs.max.x, uvs.min.y));
-                tex_coords.push(uvs.max);
-                tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
-                pen.x += scale * fixed64_to_f32(metrics.horiAdvance);
+                data.positions.push(top_left);
+                data.positions.push(top_left + Vector2::new(w, 0.));
+                data.positions.push(top_left + Vector2::new(w, h));
+                data.positions.push(top_left + Vector2::new(0., h));
+                data.tex_coords.push(uvs.min);
+                data.tex_coords.push(Vector2::new(uvs.max.x, uvs.min.y));
+                data.tex_coords.push(uvs.max);
+                data.tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
+                pen.x += scale * fixed64_to_f32(glyph.horizontal_advance);
                 if let Some(last_char) = last_char {
                     if let Ok(kerning) = font.kerning(last_char, c) {
                         pen.x += fixed64_to_f32(kerning.x)
@@ -215,36 +287,52 @@ impl Text {
                 last_char = None;
             }
         }
-        let vertex_array = gpu::VertexArray::new();
-        let text = Text {
-            positions,
-            tex_coords,
-            indices,
-            texture,
-            vertex_array,
-        };
-        text.setup_attributes();
-        text
+        
+        Text { gpu_data }
     }
 
-    pub fn setup_attributes(&self) {
-        // configure attributes
+    pub fn draw(&self, shader: &mut TextShader) {
+        for data in self.gpu_data.iter() {
+            data.draw(shader);
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct TextGpuData {
+    unicode_page: u32,
+    positions: Vec<Vector2>,
+    tex_coords: Vec<Vector2>,
+    indices: Vec<u32>,
+    texture: gpu::Texture,
+    vertex_array: gpu::VertexArray,
+}
+
+impl TextGpuData {
+    pub fn new(unicode_page: u32) -> TextGpuData {
+        TextGpuData {
+            unicode_page,
+            positions: Vec::new(),
+            tex_coords: Vec::new(),
+            indices: Vec::new(),
+            texture: gpu::Texture::new(),
+            vertex_array: gpu::VertexArray::new(),
+        }
+    }
+
+    pub fn load_buffers(&self) {
         let pos_buf_id = gpu::gen_buffer();
         let tex_buf_id = gpu::gen_buffer();
         self.vertex_array.setup_attribute(Attr::Position, pos_buf_id, PointerConfig::vector2());
         self.vertex_array.setup_attribute(Attr::TextureCoords, tex_buf_id, PointerConfig::vector2());
 
-        // load buffers data
         gpu::load_index_buffer_data(self.vertex_array.index_buffer_id, &self.indices[..]);
         gpu::load_buffer_data(pos_buf_id, &self.positions[..]);
         gpu::load_buffer_data(tex_buf_id, &self.tex_coords[..]);
     }
 
-    pub fn texture(&self) -> gpu::Texture {
-        self.texture
-    }
-
-    pub fn draw(&self) {
+    pub fn draw(&self, shader: &mut TextShader) {
+        shader.set_texture(self.texture);
         self.vertex_array.draw(self.indices.len(), 0);
     }
 }
@@ -282,13 +370,12 @@ impl TextShader {
     }
 
     pub fn draw(&mut self, text: &Text) {
-        self.set_texture(text.texture());
         self.program.activate();
-        text.draw();
+        text.draw(self);
     }
 }
 
-fn fixed64_ceil(x: freetype::freetype_sys::FT_Pos) -> i32 {
+fn fixed64_ceil(x: i32) -> i32 {
     let mut res = x as i32 >> 6;
     if (x & 63) != 0 {
         res += 1
@@ -296,7 +383,7 @@ fn fixed64_ceil(x: freetype::freetype_sys::FT_Pos) -> i32 {
     res
 }
 
-fn fixed64_to_f32(x: freetype::freetype_sys::FT_Pos) -> f32 {
+fn fixed64_to_f32(x: i32) -> f32 {
     let precision = NUM_GLYPH_RASTERIZATIONS_POWER - UPSCALE_POWER;
     (x >> (6 - precision)) as f32 / 2.0_f32.powf(precision as f32)
 }
