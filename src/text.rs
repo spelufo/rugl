@@ -203,6 +203,8 @@ impl Atlas {
         }
 
         let mut texture = gpu::Texture::new();
+        texture.set_min_filter_mode(gpu::TextureMinFilterMode::Nearest);
+        texture.set_mag_filter_mode(gpu::TextureMagFilterMode::Nearest);
         texture.allocate(width, height, gpu::TextureFormat::Alpha);
         page.width = width;
         page.height = height;
