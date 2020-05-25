@@ -26,11 +26,11 @@ fn main() {
     // text
     let freetype = text::init_library().unwrap();
     let mut font = Font::open("/usr/share/fonts/TTF/DejaVuSerif.ttf", 16, &freetype).unwrap();
-    let text  = Text::new("Hello, world!", Vector2::new(30., 100.), &mut font);
-    let lorem = "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod";
-    let text2 = Text::new(lorem, Vector2::new(30., 170.), &mut font);
+    let text  = Text::new("Hello, wárld!", Vector2::new(30., 100.), &mut font);
+    let lorem = "Lorem ipsum dolor et sin...";
+    let text2 = Text::new(lorem, Vector2::new(30., 140.), &mut font);
     let mut font2 = Font::open("/usr/share/fonts/TTF/DejaVuSerif.ttf", 24, &freetype).unwrap();
-    let text3 = Text::new(lorem, Vector2::new(30., 270.), &mut font2);
+    let text3 = Text::new(lorem, Vector2::new(30., 200.), &mut font2);
 
 
     // shaders

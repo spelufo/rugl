@@ -17,4 +17,5 @@ void main() {
     if(a < 0.01)
         discard;
     FragColor = vec4(black, a);
+    // FragColor = vec4(mix(black, magenta, a), 1.0);
 }

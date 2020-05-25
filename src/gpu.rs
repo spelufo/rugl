@@ -344,12 +344,13 @@ pub struct Texture {
 }
 
 impl Texture {
+    pub const NONE: Texture = Texture { id: 0 };
+
     pub fn new() -> Texture {
         let mut id: u32 = 0;
         unsafe {
             gl::GenTextures(1, &mut id as *mut GLuint);
         }
-        // TODO: Check failure
         let mut texture = Texture { id };
         texture.set_min_filter_mode(TextureMinFilterMode::Linear);
         texture.set_mag_filter_mode(TextureMagFilterMode::Linear);
@@ -392,9 +393,10 @@ impl Texture {
         }
     }
 
-    pub fn load_region_data<T>(&mut self, region: RectangleI, format: TextureFormat, data: &[T]) {
+    pub fn load_region_data<T>(&mut self, region: RectangleI, format: TextureFormat, data: &[T], texture_unit: TextureUnit) {
         unsafe {
-            gl::BindTexture(gl::TEXTURE_2D, self.id);
+            // TO DO: Is texture_unit necessary? docs.gl notes say so...
+            texture_unit.bind_texture(*self);
             gl::TexSubImage2D(
                 gl::TEXTURE_2D,
                 0,
