@@ -275,7 +275,6 @@ impl Text {
     pub fn new(s: &str, position: Vector2, font: &mut Font) -> Text {
         let mut gpu_data = Vec::<TextGpuData>::new();
         let mut pen = position;
-        let scale = 1.;  // 1. / (1 << UPSCALE_POWER) as f32;
         let mut i = 0;
         let mut last_char: Option<char> = None;
 
@@ -295,33 +294,33 @@ impl Text {
             let unicode_page = c as u32 / 256;
             let data = gpu_data.iter_mut().find(|d| d.unicode_page == unicode_page).unwrap();
             if let Some(glyph) = font.glyph(c) {
-                let uvs = font.tex_coords(c).unwrap();
-                data.indices.extend_from_slice(&[i, i+1, i+3, i+3, i+1, i+2]);
-                let w = scale * fixed_26_6::to_f32(glyph.width(), 0);
-                let h = scale * fixed_26_6::to_f32(glyph.height(), 0);
-                let top_left = pen + scale * Vector2::new(
-                    fixed_26_6::to_f32(glyph.horizontal_bearing.x, 0),
-                    -fixed_26_6::to_f32(glyph.horizontal_bearing.y, 0),
-                );
-                data.positions.push(top_left);
-                data.positions.push(top_left + Vector2::new(w, 0.));
-                data.positions.push(top_left + Vector2::new(w, h));
-                data.positions.push(top_left + Vector2::new(0., h));
-                data.tex_coords.push(uvs.min);
-                data.tex_coords.push(Vector2::new(uvs.max.x, uvs.min.y));
-                data.tex_coords.push(uvs.max);
-                data.tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
-                pen.x += scale * fixed_26_6::to_f32(glyph.horizontal_advance, 0);
                 if let Some(last_char) = last_char {
                     if let Ok(kerning) = font.kerning(last_char, c) {
                         pen.x += fixed_26_6::to_f32(kerning.x, 0)
                     }
                 }
+                let top_left = pen + Vector2::new(
+                    fixed_26_6::to_f32(glyph.horizontal_bearing.x, 0),
+                    -fixed_26_6::to_f32(glyph.horizontal_bearing.y, 0),
+                );
+                let w = fixed_26_6::to_f32(glyph.width(), 0);
+                let h = fixed_26_6::to_f32(glyph.height(), 0);
+                data.indices.extend_from_slice(&[i, i+1, i+3, i+3, i+1, i+2]);
+                data.positions.push(top_left);
+                data.positions.push(top_left + Vector2::new(w, 0.));
+                data.positions.push(top_left + Vector2::new(w, h));
+                data.positions.push(top_left + Vector2::new(0., h));
+                let uvs = font.tex_coords(c).unwrap();
+                data.tex_coords.push(uvs.min);
+                data.tex_coords.push(Vector2::new(uvs.max.x, uvs.min.y));
+                data.tex_coords.push(uvs.max);
+                data.tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
+                pen.x += fixed_26_6::to_f32(glyph.horizontal_advance, 0);
                 i += 4;
                 last_char = Some(c);
             } else {
                 if c == ' ' {
-                    pen.x += scale * font.size_px() as f32 / 3.0;  // TODO: Text layout.
+                    pen.x += font.size_px() as f32 / 3.0;  // TODO: Text layout.
                 }
                 last_char = None;
             }
