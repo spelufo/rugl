@@ -272,27 +272,46 @@ pub struct Text {
 }
 
 impl Text {
-    pub fn new(s: &str, position: Vector2, font: &mut Font) -> Text {
-        let mut gpu_data = Vec::<TextGpuData>::new();
-        let mut pen = position;
-        let mut i = 0;
-        let mut last_char: Option<char> = None;
+    pub fn new() -> Text {
+        Text { gpu_data: Vec::new() }
+    }
 
+    pub fn left_aligned(s: &str, position: Vector2, wrap_width: f32, font: &mut Font) -> Text {
+        let wrap_x = position.x + wrap_width;
+        let mut pen = position;
+        let mut text = Self::new();
+        for word in s.split_whitespace() {
+            let word_advance = Self::measure_advance(word, font);
+            text.push(word, pen, font);
+            pen.x += word_advance + font.size_px() as f32 / 3.0; // font...?
+            if pen.x > wrap_x {
+                pen.x = position.x;
+                pen.y += 1.2 * font.size_px() as f32; //  font.line_height?
+            }
+        }
+        text.load_buffers();
+        text
+    }
+
+    pub fn push(&mut self, s: &str, position: Vector2, font: &mut Font) {
         for c in s.chars() {
             let unicode_page = c as u32 / 256;
-            if gpu_data.iter().find(|d| d.unicode_page == unicode_page).is_none() {
-                gpu_data.push(TextGpuData::new(unicode_page));
+            if self.gpu_data.iter().find(|d| d.unicode_page == unicode_page).is_none() {
+                self.gpu_data.push(TextGpuData::new(unicode_page));
             }
         }
 
-        for data in gpu_data.iter_mut() {
+        for data in self.gpu_data.iter_mut() {
             font.load_page(data.unicode_page);
             data.texture = font.texture(data.unicode_page).unwrap();
         }
 
+        let mut pen = position;
+        let mut last_char: Option<char> = None;
         for c in s.chars() {
             let unicode_page = c as u32 / 256;
-            let data = gpu_data.iter_mut().find(|d| d.unicode_page == unicode_page).unwrap();
+            let data = self.gpu_data.iter_mut().find(|d| d.unicode_page == unicode_page).unwrap();
+            let i = data.positions.len() as u32;
             if let Some(glyph) = font.glyph(c) {
                 if let Some(last_char) = last_char {
                     if let Ok(kerning) = font.kerning(last_char, c) {
@@ -316,27 +335,45 @@ impl Text {
                 data.tex_coords.push(uvs.max);
                 data.tex_coords.push(Vector2::new(uvs.min.x, uvs.max.y));
                 pen.x += fixed_26_6::to_f32(glyph.horizontal_advance, 0);
-                i += 4;
                 last_char = Some(c);
             } else {
                 if c == ' ' {
-                    pen.x += font.size_px() as f32 / 3.0;  // TODO: Text layout.
+                    pen.x += font.size_px() as f32 / 3.0;
                 }
                 last_char = None;
             }
         }
+    }
 
-        for data in gpu_data.iter() {
+    pub fn load_buffers(&self) {
+        for data in self.gpu_data.iter() {
             data.load_buffers();
         }
-        
-        Text { gpu_data }
     }
 
     pub fn draw(&self, shader: &mut TextShader) {
         for data in self.gpu_data.iter() {
             data.draw(shader);
         }
+    }
+
+    pub fn measure_advance(s: &str, font: &mut Font) -> f32 {
+        let mut pen_x = 0.0;
+        let mut last_char: Option<char> = None;
+        for c in s.chars() {
+            if let Some(glyph) = font.glyph(c) {
+                if let Some(last_char) = last_char {
+                    if let Ok(kerning) = font.kerning(last_char, c) {
+                        pen_x += fixed_26_6::to_f32(kerning.x, 0)
+                    }
+                }
+                pen_x += fixed_26_6::to_f32(glyph.horizontal_advance, 0);
+                last_char = Some(c);
+            } else {
+                last_char = None;
+            }
+        }
+        pen_x
     }
 }
 

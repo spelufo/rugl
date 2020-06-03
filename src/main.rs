@@ -27,10 +27,10 @@ fn main() {
     let freetype = text::init_library().unwrap();
     let mut font = Font::open("resources/times.ttf", 18, &freetype).unwrap();
     let lorem = "Lorem ipsum dolor sit amet, consectetur adipisicing elit, sed do eiusmod";
-    let text  = Text::new(lorem, Vector2::new(30., 100.), &mut font);
-    let text2 = Text::new(lorem, Vector2::new(30.25, 140.), &mut font);
+    let text = Text::left_aligned(lorem, Vector2::new(30., 100.), 300., &mut font);
+    let text2 = Text::left_aligned(lorem, Vector2::new(30., 340.), 500., &mut font);
     let mut font2 = Font::open("resources/times.ttf", 42, &freetype).unwrap();
-    let text3 = Text::new("Welló!!", Vector2::new(30., 200.), &mut font2);
+    let text3 = Text::left_aligned("Welló!!", Vector2::new(30., 200.), 100., &mut font2);
 
 
     // shaders
